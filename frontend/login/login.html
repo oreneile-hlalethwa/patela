@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patela</title>
+  <link rel="stylesheet" href="login.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Loading screen -->
+    <section id="loading" class="screen loading">
+      <div class="brand">Patela</div>
+      <div class="load-track"><div class="load-fill"></div></div>
+    </section>
+
+    <!-- Role selection -->
+    <section id="roles" class="screen center hidden">
+      <div class="roles-inner">
+        <p class="prompt">Select how you want to continue</p>
+        <div class="blocks">
+          <button class="block" data-role="seller">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="34" height="34">
+              <path d="M3 7h18l-1.5 4.5a3 3 0 0 1-3 2.5H7.5a3 3 0 0 1-3-2.5L3 7z"/>
+              <path d="M3 7l1-3h16l1 3M6 14v6h12v-6"/>
+            </svg>
+            <span class="block-label">Seller</span>
+            <span class="block-sub">List and sell your products</span>
+          </button>
+          <button class="block" data-role="buyer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="34" height="34">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4H6zM3 6h18M16 10a4 4 0 0 1-8 0"/>
+            </svg>
+            <span class="block-label">Buyer</span>
+            <span class="block-sub">Browse and buy products</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Auth screen -->
+    <section id="auth" class="screen center hidden">
+      <div class="card">
+        <div class="card-header">
+          <button id="backBtn" class="back-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Back
+          </button>
+          <div id="roleTag" class="role-tag"></div>
+        </div>
+
+        <h1 id="authTitle" class="title">Sign in</h1>
+
+        <!-- Forms injected here -->
+        <div id="formHost"></div>
+
+        <p class="switch" id="switchLine"></p>
+      </div>
+    </section>
+
+    <!-- Pull-up banner (seller business question) -->
+    <div id="banner" class="overlay hidden">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <button class="sheet-close" id="bannerClose">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+        <h2 class="sheet-title">Is your business registered?</h2>
+        <p class="sheet-text">You can still use the platform even if it's not registered, as long as you provide a valid ID.</p>
+        <div class="sheet-btns">
+          <button class="sheet-yes" id="bizYes">Yes</button>
+          <button class="sheet-no" id="bizNo">No</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html>
