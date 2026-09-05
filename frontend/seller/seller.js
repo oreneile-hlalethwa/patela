@@ -382,9 +382,22 @@ async function renderActivity() {
 
     <div class="date-label">${todayLabel}</div>
     <div class="tx-list">
-      ${payments.length === 0 ? `<p style="color:#868b92">No payments yet.</p>` : payments.map((p) => {
-        const name = p.buyer_name || "Buyer";
-        const time = new Date(p.created_at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+      ${all.length === 0 ? `<p style="color:#868b92">No activity yet.</p>` : all.map((r) => {
+        const time = new Date(r.created_at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+        if (r.status === "withdrawal") {
+          return `
+          <div class="tx">
+            <div class="tx-avatar tx-out">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 19V5M5 12l7 7 7-7"/></svg>
+            </div>
+            <div style="flex:1">
+              <div class="tx-name">Withdrawal</div>
+              <div class="tx-time">${time}</div>
+            </div>
+            <div class="tx-amount tx-amount-out">-R ${Number(r.amount).toFixed(2)}</div>
+          </div>`;
+        }
+        const name = r.buyer_name || "Buyer";
         return `
           <div class="tx">
             <div class="tx-avatar">${name[0]}</div>
@@ -392,7 +405,7 @@ async function renderActivity() {
               <div class="tx-name">${name}</div>
               <div class="tx-time">${time}</div>
             </div>
-            <div class="tx-amount">+R ${Number(p.amount).toFixed(2)}</div>
+            <div class="tx-amount">+R ${Number(r.amount).toFixed(2)}</div>
           </div>`;
       }).join("")}
     </div>`;
