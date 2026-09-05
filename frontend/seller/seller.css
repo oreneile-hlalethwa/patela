@@ -221,3 +221,42 @@ h1.h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin: 0 0 1
 }
 .nav-btn span { font-size: 11px; font-weight: 600; }
 .nav-btn.active { color: var(--green); }
+
+/* ===== Payment success screen ===== */
+.success-wrap {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px; text-align: center;
+}
+.success-icon {
+  width: 84px; height: 84px; border-radius: 50%; background: var(--green); color: #fff;
+  display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
+  animation: pop 0.35s ease;
+}
+@keyframes pop { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.success-amount { font-size: 40px; font-weight: 800; letter-spacing: -0.5px; }
+.success-to { font-size: 15px; color: var(--muted); margin: 6px 0 30px; }
+.scan-btn {
+  background: var(--green); color: #fff; border: none; border-radius: 14px;
+  padding: 16px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%;
+  font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+
+/* Current balance line under Received today */
+.balance-line { font-size: 13px; opacity: 0.85; margin-top: 8px; }
+.balance-line strong { font-weight: 700; }
+
+/* Mock ABSA SMS banner */
+.sms-banner {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  width: min(360px, calc(100% - 28px));
+  background: #fff; border-radius: 14px; padding: 12px 14px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.22); z-index: 100;
+  animation: smsIn 0.4s ease;
+}
+.sms-banner.sms-out { animation: smsOut 0.4s ease forwards; }
+@keyframes smsIn { from { transform: translate(-50%, -120%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+@keyframes smsOut { from { transform: translate(-50%, 0); opacity: 1; } to { transform: translate(-50%, -120%); opacity: 0; } }
+.sms-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.sms-sender { font-size: 13px; font-weight: 800; color: #d40511; }
+.sms-time { font-size: 11px; color: var(--muted); }
+.sms-body { font-size: 14px; color: var(--ink); line-height: 1.35; }

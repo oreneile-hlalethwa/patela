@@ -275,7 +275,7 @@ function openAddCard() {
 
 // ============ 2. ACTIVITY ============
 async function renderActivity() {
-  const today = new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" });
+  const todayLabel = new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" });
 
   screen.innerHTML = `
     <div class="pad">
@@ -283,11 +283,12 @@ async function renderActivity() {
       <div id="activityBody"><p style="color:#868b92">Loading…</p></div>
     </div>`;
 
-  const { data: payments, error } = await supabase
+  // fetch all this seller's transactions (paid in, and withdrawals out)
+  const { data: rows, error } = await supabase
     .from("transactions")
     .select("*")
     .eq("seller_id", currentUser.id)
-    .eq("status", "paid")
+    .in("status", ["paid", "withdrawal"])
     .order("created_at", { ascending: false });
 
   const body = document.getElementById("activityBody");
@@ -298,20 +299,36 @@ async function renderActivity() {
     return;
   }
 
-  const list = payments || [];
-  const total = list.reduce((a, p) => a + Number(p.amount), 0);
+  const all = rows || [];
+  const payments = all.filter((r) => r.status === "paid");
+  const withdrawals = all.filter((r) => r.status === "withdrawal");
+
+  // received today only
+  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+  const receivedToday = payments
+    .filter((p) => new Date(p.created_at) >= startOfDay)
+    .reduce((a, p) => a + Number(p.amount), 0);
+
+  // current balance = all received - all withdrawn
+  const totalIn = payments.reduce((a, p) => a + Number(p.amount), 0);
+  const totalOut = withdrawals.reduce((a, w) => a + Number(w.amount), 0);
+  const balance = totalIn - totalOut;
 
   body.innerHTML = `
     <div class="summary-card">
       <div>
-        <div class="summary-label">Total received</div>
-        <div class="summary-value">R ${total.toFixed(2)}</div>
+        <div class="summary-label">Received today</div>
+        <div class="summary-value">R ${receivedToday.toFixed(2)}</div>
+        <div class="balance-line">Current balance: <strong>R ${balance.toFixed(2)}</strong></div>
       </div>
-      <div class="summary-count">${list.length} payments</div>
+      <div class="summary-count">${payments.length} payments</div>
     </div>
-    <div class="date-label">${today}</div>
+
+    <button class="primary-btn" id="withdrawBtn" style="margin-bottom:22px">Withdraw</button>
+
+    <div class="date-label">${todayLabel}</div>
     <div class="tx-list">
-      ${list.length === 0 ? `<p style="color:#868b92">No payments yet.</p>` : list.map((p) => {
+      ${payments.length === 0 ? `<p style="color:#868b92">No payments yet.</p>` : payments.map((p) => {
         const name = p.buyer_name || "Buyer";
         const time = new Date(p.created_at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
         return `
@@ -325,6 +342,85 @@ async function renderActivity() {
           </div>`;
       }).join("")}
     </div>`;
+
+  document.getElementById("withdrawBtn").addEventListener("click", () => openWithdraw(balance));
+}
+
+function openWithdraw(balance) {
+  const div = document.createElement("div");
+  div.className = "overlay";
+  div.innerHTML = `
+    <div class="sheet">
+      <div class="handle"></div>
+      <button class="sheet-close" id="wClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      <h2 class="sheet-title">Withdraw</h2>
+      <p style="font-size:13px;color:#6b7280;margin:0 0 16px">Available: <strong>R ${balance.toFixed(2)}</strong></p>
+      <label class="field-label">Amount</label>
+      <input class="input" id="wAmount" inputmode="decimal" placeholder="0.00" />
+      <p class="hint error" id="wError" style="min-height:16px;margin-top:6px"></p>
+      <button class="primary-btn" id="wConfirm" style="margin-top:8px">Withdraw</button>
+    </div>`;
+  document.getElementById("app").appendChild(div);
+
+  const amtEl = div.querySelector("#wAmount");
+  const errEl = div.querySelector("#wError");
+  const confirmBtn = div.querySelector("#wConfirm");
+
+  amtEl.addEventListener("input", () => {
+    amtEl.value = amtEl.value.replace(/[^\d.]/g, "");
+    errEl.textContent = "";
+  });
+
+  confirmBtn.addEventListener("click", async () => {
+    const amt = parseFloat(amtEl.value);
+    if (!amt || amt <= 0) { errEl.textContent = "Enter a valid amount."; return; }
+    if (amt > balance) { errEl.textContent = "Amount is more than your balance."; return; }
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = "Processing…";
+
+    // save the withdrawal to the database
+    const { error } = await supabase.from("transactions").insert({
+      seller_id: currentUser.id,
+      seller_code: ACCOUNT_CODE,
+      seller_name: currentUser?.user_metadata?.business_name || currentUser?.user_metadata?.name || "Seller",
+      amount: amt,
+      status: "withdrawal",
+    });
+
+    if (error) {
+      errEl.textContent = "Withdrawal failed. Try again.";
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "Withdraw";
+      console.error(error);
+      return;
+    }
+
+    div.remove();
+    showAbsaSms(amt);
+    renderActivity(); // refresh so balance drops
+  });
+
+  div.querySelector("#wClose").addEventListener("click", () => div.remove());
+  div.addEventListener("click", (e) => { if (e.target === div) div.remove(); });
+}
+
+function showAbsaSms(amount) {
+  const ref = "PTL" + Math.floor(100000 + Math.random() * 900000);
+  const time = new Date().toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+  const sms = document.createElement("div");
+  sms.className = "sms-banner";
+  sms.innerHTML = `
+    <div class="sms-head">
+      <div class="sms-sender">ABSA</div>
+      <div class="sms-time">${time}</div>
+    </div>
+    <div class="sms-body">+R ${amount.toFixed(2)} withdrawn from Patela. Ref ${ref}. Available today.</div>`;
+  document.getElementById("app").appendChild(sms);
+  setTimeout(() => {
+    sms.classList.add("sms-out");
+    setTimeout(() => sms.remove(), 400);
+  }, 4000);
 }
 
 // ============ 3. ANALYTICS ============
