@@ -112,18 +112,31 @@ function renderWallet() {
     </div>`;
 
   renderCards();
+  loadCards();
   document.getElementById("addCardBtn").addEventListener("click", openAddCard);
   document.getElementById("scanBtn").addEventListener("click", renderScan);
 }
 
 function renderCards() {
   const host = document.getElementById("cardStack");
+  if (!host) return;
   host.innerHTML = cards.map((c) => `
     <div class="credit-card">
       <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
       <div class="cc-num">•••• •••• •••• ${c.last4}</div>
       <div class="cc-brand">${c.brand}</div>
     </div>`).join("");
+}
+
+async function loadCards() {
+  const { data, error } = await supabase
+    .from("cards")
+    .select("*")
+    .eq("user_id", currentUser.id)
+    .order("created_at", { ascending: true });
+  if (error) { console.error(error); return; }
+  cards = data || [];
+  renderCards();
 }
 
 let qrScanner = null;
@@ -296,26 +309,65 @@ function openAddCard() {
       <label class="field-label">Card number</label>
       <input class="input" id="cardNum" inputmode="numeric" placeholder="1234 5678 9012 3456" />
       <div class="row">
-        <div style="flex:1"><label class="field-label">Expiry</label><input class="input" placeholder="MM/YY" /></div>
-        <div style="flex:1"><label class="field-label">CVV</label><input class="input" inputmode="numeric" maxlength="3" placeholder="123" /></div>
+        <div style="flex:1">
+          <label class="field-label">Expiry</label>
+          <div class="expiry-row">
+            <input class="input expiry-mm" id="expMM" inputmode="numeric" maxlength="2" placeholder="MM" />
+            <span class="expiry-slash">/</span>
+            <input class="input expiry-yy" id="expYY" inputmode="numeric" maxlength="2" placeholder="YY" />
+          </div>
+        </div>
+        <div style="flex:1"><label class="field-label">CVV</label><input class="input" id="cvv" inputmode="numeric" maxlength="3" placeholder="123" /></div>
       </div>
       <button class="primary-btn" id="saveCard" style="margin-top:18px" disabled>Add card</button>
     </div>`;
   document.getElementById("app").appendChild(div);
 
   const numEl = div.querySelector("#cardNum");
+  const mmEl = div.querySelector("#expMM");
+  const yyEl = div.querySelector("#expYY");
   const saveBtn = div.querySelector("#saveCard");
+
   numEl.addEventListener("input", () => {
     const digits = numEl.value.replace(/\D/g, "").slice(0, 16);
     numEl.value = digits.replace(/(.{4})/g, "$1 ").trim();
     saveBtn.disabled = digits.length < 4;
   });
-  saveBtn.addEventListener("click", () => {
+
+  mmEl.addEventListener("input", () => {
+    mmEl.value = mmEl.value.replace(/\D/g, "").slice(0, 2);
+    if (mmEl.value.length === 2) yyEl.focus();
+  });
+  yyEl.addEventListener("input", () => {
+    yyEl.value = yyEl.value.replace(/\D/g, "").slice(0, 2);
+  });
+  yyEl.addEventListener("keydown", (e) => {
+    if (e.key === "Backspace" && yyEl.value === "") mmEl.focus();
+  });
+
+  saveBtn.addEventListener("click", async () => {
     const last4 = numEl.value.replace(/\s/g, "").slice(-4);
-    cards.push({ id: Date.now(), last4, brand: "Visa" });
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+
+    const { data, error } = await supabase
+      .from("cards")
+      .insert({ user_id: currentUser.id, last4, brand: "Visa" })
+      .select()
+      .single();
+
+    if (error) {
+      saveBtn.textContent = "Failed — try again";
+      saveBtn.disabled = false;
+      console.error(error);
+      return;
+    }
+
+    cards.push(data);
     div.remove();
     renderCards();
   });
+
   div.querySelector("#sheetClose").addEventListener("click", () => div.remove());
   div.addEventListener("click", (e) => { if (e.target === div) div.remove(); });
 }

@@ -260,3 +260,8 @@ h1.h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin: 0 0 1
 .sms-sender { font-size: 13px; font-weight: 800; color: #d40511; }
 .sms-time { font-size: 11px; color: var(--muted); }
 .sms-body { font-size: 14px; color: var(--ink); line-height: 1.35; }
+/* Expiry MM / YY split */
+.expiry-row { display: flex; align-items: center; gap: 6px; }
+.expiry-row .input { text-align: center; padding-left: 8px; padding-right: 8px; }
+.expiry-mm, .expiry-yy { width: 100%; }
+.expiry-slash { color: var(--muted); font-weight: 600; }
