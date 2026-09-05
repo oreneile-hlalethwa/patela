@@ -375,7 +375,10 @@ async function renderActivity() {
         <div class="summary-value">R ${receivedToday.toFixed(2)}</div>
         <div class="balance-line">Current balance: <strong>R ${balance.toFixed(2)}</strong></div>
       </div>
-      <div class="summary-count">${payments.length} payments</div>
+      <div class="summary-counts">
+        <div class="summary-count">${payments.length} payments</div>
+        <div class="summary-count">${withdrawals.length} withdrawals</div>
+      </div>
     </div>
 
     <button class="primary-btn" id="withdrawBtn" style="margin-bottom:22px">Withdraw</button>
