@@ -272,3 +272,430 @@ h1.h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin: 0 0 1
 
 /* Stack payment + withdrawal counts */
 .summary-counts { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+
+
+
+
+
+
+
+
+
+/* =========================================
+   ANALYTICS TABS
+========================================= */
+
+.analytics-heading {
+  margin-bottom: 18px;
+}
+
+.analytics-subtitle {
+  margin: 4px 0 0;
+  color: #868b92;
+  font-size: 13px;
+}
+
+.analytics-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: #f1f3f4;
+  padding: 4px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.analytics-tab {
+  border: none;
+  background: transparent;
+  padding: 11px;
+  border-radius: 9px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.analytics-tab.active {
+  background: white;
+  color: #0f7c5f;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.analytics-loading {
+  padding: 40px 10px;
+  text-align: center;
+  color: #868b92;
+}
+
+
+/* =========================================
+   OVERVIEW
+========================================= */
+
+.overview-banner {
+  background: linear-gradient(
+    135deg,
+    #0f7c5f,
+    #0a654e
+  );
+  border-radius: 18px;
+  padding: 22px;
+  color: white;
+  margin-bottom: 18px;
+}
+
+.overview-label {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.overview-value {
+  font-size: 30px;
+  font-weight: 750;
+  margin-top: 5px;
+}
+
+.overview-note {
+  margin-top: 5px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.customer-transactions {
+  font-size: 11px;
+  color: #868b92;
+  margin-top: 2px;
+}
+
+
+/* =========================================
+   SMART BOOKS
+========================================= */
+
+.smartbooks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.smartbooks-brand {
+  font-size: 21px;
+  font-weight: 750;
+  color: #111827;
+}
+
+.smartbooks-month {
+  color: #0f7c5f;
+  font-weight: 650;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.smartbooks-description {
+  color: #868b92;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 6px;
+  max-width: 420px;
+}
+
+.add-expense-btn {
+  flex-shrink: 0;
+  border: none;
+  background: #0f7c5f;
+  color: white;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+
+/* =========================================
+   FINANCIAL SUMMARY
+========================================= */
+
+.books-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.books-summary-card {
+  background: white;
+  border: 1px solid #eceff1;
+  border-radius: 14px;
+  padding: 15px;
+}
+
+.books-summary-label {
+  font-size: 12px;
+  color: #868b92;
+}
+
+.books-summary-value {
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 750;
+  color: #111827;
+}
+
+.books-summary-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.books-summary-value.positive {
+  color: #0f7c5f;
+}
+
+.books-summary-value.negative {
+  color: #c0392b;
+}
+
+
+/* =========================================
+   STATEMENTS
+========================================= */
+
+.books-card {
+  background: white;
+  border: 1px solid #eceff1;
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.books-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.books-card-title {
+  font-size: 16px;
+  font-weight: 750;
+  color: #111827;
+}
+
+.books-card-period {
+  margin-top: 3px;
+  color: #868b92;
+  font-size: 11px;
+}
+
+.statement-section {
+  font-size: 11px;
+  font-weight: 750;
+  color: #0f7c5f;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  margin-top: 18px;
+  margin-bottom: 5px;
+}
+
+.statement-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  padding: 9px 0;
+  font-size: 13px;
+  color: #374151;
+}
+
+.statement-total {
+  border-top: 1px solid #eceff1;
+  margin-top: 4px;
+  font-weight: 650;
+}
+
+.statement-final {
+  border-top: 2px solid #111827;
+  margin-top: 12px;
+  padding-top: 14px;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.positive-text {
+  color: #0f7c5f;
+}
+
+.negative-text {
+  color: #c0392b;
+}
+
+.muted-row {
+  color: #9ca3af;
+}
+
+
+/* =========================================
+   EXPENSE LIST
+========================================= */
+
+.expense-list {
+  margin-top: 12px;
+}
+
+.expense-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f1f2;
+}
+
+.expense-row:last-child {
+  border-bottom: none;
+}
+
+.expense-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff0ed;
+  color: #c0392b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 750;
+}
+
+.expense-details {
+  flex: 1;
+}
+
+.expense-name {
+  color: #111827;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.expense-meta {
+  margin-top: 3px;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+.expense-amount {
+  font-weight: 700;
+  color: #c0392b;
+  font-size: 13px;
+}
+
+.empty-books {
+  padding: 30px 12px;
+  text-align: center;
+  color: #868b92;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.books-disclaimer {
+  color: #9ca3af;
+  font-size: 10px;
+  text-align: center;
+  line-height: 1.5;
+  padding: 4px 12px 14px;
+}
+
+
+/* Make select elements match normal inputs */
+select.input {
+  width: 100%;
+  appearance: none;
+}
+
+
+/* =========================================
+   MOBILE
+========================================= */
+
+@media (max-width: 480px) {
+  .books-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .smartbooks-header {
+    align-items: center;
+  }
+
+  .add-expense-btn {
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+}
+
+
+
+.smartbooks-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cash-sale-btn {
+  border: 1px solid #0f7c5f;
+  background: white;
+  color: #0f7c5f;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cash-sale-btn:hover {
+  background: #f1faf7;
+}
+
+@media (max-width: 480px) {
+  .smartbooks-actions {
+    gap: 6px;
+  }
+
+  .cash-sale-btn,
+  .add-expense-btn {
+    padding: 9px 10px;
+    font-size: 11px;
+  }
+}
+
+.download-report-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.download-report-btn:hover {
+  border-color: #0f7c5f;
+  color: #0f7c5f;
+  background: #f5faf8;
+}
+
+.smartbooks-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+
+  .download-report-btn,
+  .cash-sale-btn,
+  .add-expense-btn {
+    padding: 9px 10px;
+    font-size: 11px;
+  }
+
+}
