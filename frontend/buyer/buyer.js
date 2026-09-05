@@ -412,59 +412,825 @@ async function renderActivity() {
     </div>`;
 }
 
+
+
 // ============ 3. ANALYTICS ============
-function renderAnalytics() {
-  const total = CATEGORIES.reduce((a, c) => a + c.amount, 0);
-  const topCat = CATEGORIES[0];
-  const busiest = SPEND_WEEK.reduce((a, b) => (b.total > a.total ? b : a));
+
+async function renderAnalytics() {
+
   screen.innerHTML = `
     <div class="pad">
-      <h1 class="h1">Analytics</h1>
-      <div class="stat-row">
-        <div class="stat"><div class="stat-label">Top category</div><div class="stat-value">${topCat.name}</div><div class="stat-sub">R${topCat.amount}</div></div>
-        <div class="stat"><div class="stat-label">Busiest day</div><div class="stat-value">${busiest.day}</div><div class="stat-sub">R${busiest.total}</div></div>
+
+      <h1 class="h1">
+        Analytics
+      </h1>
+
+      <p style="
+        margin-top:-8px;
+        margin-bottom:20px;
+        color:#868b92;
+        font-size:12px;
+      ">
+        See how and where you're spending
+      </p>
+
+      <div
+        id="analyticsBody"
+      >
+        <p style="
+          color:#868b92;
+          text-align:center;
+          padding:30px 0;
+        ">
+          Loading your spending...
+        </p>
       </div>
 
-      <div class="chart-card"><div class="chart-title">Spending this week</div><canvas id="spendChart"></canvas></div>
+    </div>
+  `;
 
-      <div class="chart-card">
-        <div class="chart-title">Where your money goes</div>
-        ${CATEGORIES.map((c) => `
-          <div class="cat-row">
-            <span class="cat-name">${c.name}</span>
-            <span class="cat-track"><span class="cat-fill" style="width:${c.pct}%"></span></span>
-            <span class="cat-val">R${c.amount}</span>
-          </div>`).join("")}
-      </div>
 
-      <div class="chart-card">
-        <div class="chart-title">Favourite sellers</div>
-        <div class="top-list">
-          ${FAV_SELLERS.map((s, i) => `
-            <div class="top-row"><span class="top-rank">${i + 1}</span><span style="flex:1">${s.name}</span><span class="top-spend">${s.visits} visits</span></div>`).join("")}
+  const body =
+    document.getElementById(
+      "analyticsBody"
+    );
+
+
+  // ===========================================
+  // GET ALL PAID TRANSACTIONS FOR THIS BUYER
+  // ===========================================
+
+  const {
+    data: transactions,
+    error
+  } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq(
+      "buyer_id",
+      currentUser.id
+    )
+    .eq(
+      "status",
+      "paid"
+    )
+    .order(
+      "created_at",
+      {
+        ascending: true
+      }
+    );
+
+
+  if (error) {
+
+    console.error(
+      "Buyer analytics error:",
+      error
+    );
+
+
+    body.innerHTML = `
+      <p style="
+        color:#868b92;
+        text-align:center;
+        padding:30px 0;
+      ">
+        Couldn't load analytics.
+      </p>
+    `;
+
+    return;
+  }
+
+
+  const purchases =
+    transactions || [];
+
+
+  // ===========================================
+  // CURRENT DATE
+  // ===========================================
+
+  const now =
+    new Date();
+
+
+  // ===========================================
+  // START OF THIS MONTH
+  // ===========================================
+
+  const monthStart =
+    new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    );
+
+
+  const thisMonth =
+    purchases.filter(
+      (transaction) =>
+        new Date(
+          transaction.created_at
+        ) >= monthStart
+    );
+
+
+  const monthSpent =
+    thisMonth.reduce(
+      (total, transaction) =>
+        total +
+        Number(
+          transaction.amount
+        ),
+      0
+    );
+
+
+  // ===========================================
+  // AVERAGE PURCHASE
+  // ===========================================
+
+  const averagePurchase =
+    thisMonth.length > 0
+
+      ? monthSpent /
+        thisMonth.length
+
+      : 0;
+
+
+  // ===========================================
+  // CURRENT WEEK
+  // Monday -> Sunday
+  // ===========================================
+
+  const weekStart =
+    new Date(now);
+
+
+  const currentDay =
+    weekStart.getDay();
+
+
+  const distanceFromMonday =
+    currentDay === 0
+      ? 6
+      : currentDay - 1;
+
+
+  weekStart.setDate(
+    weekStart.getDate() -
+    distanceFromMonday
+  );
+
+
+  weekStart.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+
+  const nextWeek =
+    new Date(
+      weekStart
+    );
+
+
+  nextWeek.setDate(
+    nextWeek.getDate() + 7
+  );
+
+
+  const weekPurchases =
+    purchases.filter(
+      (transaction) => {
+
+        const date =
+          new Date(
+            transaction.created_at
+          );
+
+
+        return (
+          date >= weekStart &&
+          date < nextWeek
+        );
+
+      }
+    );
+
+
+  // ===========================================
+  // SPENDING PER DAY THIS WEEK
+  // ===========================================
+
+  const weekDays = [
+
+    {
+      day: "Mon",
+      jsDay: 1,
+      total: 0
+    },
+
+    {
+      day: "Tue",
+      jsDay: 2,
+      total: 0
+    },
+
+    {
+      day: "Wed",
+      jsDay: 3,
+      total: 0
+    },
+
+    {
+      day: "Thu",
+      jsDay: 4,
+      total: 0
+    },
+
+    {
+      day: "Fri",
+      jsDay: 5,
+      total: 0
+    },
+
+    {
+      day: "Sat",
+      jsDay: 6,
+      total: 0
+    },
+
+    {
+      day: "Sun",
+      jsDay: 0,
+      total: 0
+    }
+
+  ];
+
+
+  weekPurchases.forEach(
+    (transaction) => {
+
+      const day =
+        new Date(
+          transaction.created_at
+        ).getDay();
+
+
+      const match =
+        weekDays.find(
+          (item) =>
+            item.jsDay === day
+        );
+
+
+      if (match) {
+
+        match.total +=
+          Number(
+            transaction.amount
+          );
+
+      }
+
+    }
+  );
+
+
+  // ===========================================
+  // BUSIEST SPENDING DAY
+  // ===========================================
+
+  const busiestDay =
+    weekDays.reduce(
+      (highest, current) =>
+
+        current.total >
+        highest.total
+
+          ? current
+          : highest
+
+    );
+
+
+  // ===========================================
+  // SELLER SPENDING
+  // ===========================================
+
+  const sellerMap = {};
+
+
+  thisMonth.forEach(
+    (transaction) => {
+
+      const sellerName =
+        transaction.seller_name ||
+        "Seller";
+
+
+      const sellerKey =
+        transaction.seller_id ||
+        sellerName;
+
+
+      if (
+        !sellerMap[sellerKey]
+      ) {
+
+        sellerMap[sellerKey] = {
+
+          name:
+            sellerName,
+
+          amount:
+            0,
+
+          visits:
+            0
+
+        };
+
+      }
+
+
+      sellerMap[
+        sellerKey
+      ].amount +=
+        Number(
+          transaction.amount
+        );
+
+
+      sellerMap[
+        sellerKey
+      ].visits +=
+        1;
+
+    }
+  );
+
+
+  const sellers =
+    Object
+      .values(
+        sellerMap
+      )
+      .sort(
+        (a, b) =>
+          b.amount -
+          a.amount
+      );
+
+
+  // ===========================================
+  // FAVOURITE SELLERS
+  // ===========================================
+
+  const favouriteSellers =
+    [...sellers]
+      .sort(
+        (a, b) => {
+
+          if (
+            b.visits !==
+            a.visits
+          ) {
+
+            return (
+              b.visits -
+              a.visits
+            );
+
+          }
+
+
+          return (
+            b.amount -
+            a.amount
+          );
+
+        }
+      )
+      .slice(
+        0,
+        5
+      );
+
+
+  // ===========================================
+  // RENDER ANALYTICS
+  // ===========================================
+
+  body.innerHTML = `
+
+    <!-- SUMMARY -->
+
+    <div
+      class="summary-card"
+      style="
+        margin-bottom:16px;
+      "
+    >
+
+      <div>
+
+        <div class="summary-label">
+          Spent this month
         </div>
-      </div>
-    </div>`;
 
-  new Chart(document.getElementById("spendChart"), {
-    type: "line",
-    data: {
-      labels: SPEND_WEEK.map((w) => w.day),
-      datasets: [{
-        data: SPEND_WEEK.map((w) => w.total),
-        borderColor: GREEN, backgroundColor: "rgba(15,124,95,0.1)", borderWidth: 2.5,
-        pointRadius: 3, tension: 0.35, fill: true,
-      }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: "#6b7280", font: { size: 11 } } },
-        y: { grid: { color: "#eef0f2" }, ticks: { color: "#6b7280", font: { size: 11 } }, beginAtZero: true },
+        <div class="summary-value">
+          R ${monthSpent.toFixed(2)}
+        </div>
+
+      </div>
+
+
+      <div class="summary-count">
+        ${thisMonth.length}
+        purchase${thisMonth.length === 1 ? "" : "s"}
+      </div>
+
+    </div>
+
+
+    <!-- STATISTICS -->
+
+    <div class="stat-row">
+
+
+      <div class="stat">
+
+        <div class="stat-label">
+          Average purchase
+        </div>
+
+        <div class="stat-value">
+          R${averagePurchase.toFixed(2)}
+        </div>
+
+        <div class="stat-sub">
+          this month
+        </div>
+
+      </div>
+
+
+      <div class="stat">
+
+        <div class="stat-label">
+          Busiest day
+        </div>
+
+        <div class="stat-value">
+
+          ${
+            busiestDay.total > 0
+              ? busiestDay.day
+              : "--"
+          }
+
+        </div>
+
+        <div class="stat-sub">
+
+          ${
+            busiestDay.total > 0
+              ? `R${busiestDay.total.toFixed(2)}`
+              : "No spending"
+          }
+
+        </div>
+
+      </div>
+
+
+    </div>
+
+
+    <!-- WEEK CHART -->
+
+    <div class="chart-card">
+
+      <div class="chart-title">
+        Spending this week
+      </div>
+
+      <canvas
+        id="spendChart"
+      ></canvas>
+
+    </div>
+
+
+    <!-- WHERE MONEY GOES -->
+
+    <div class="chart-card">
+
+      <div class="chart-title">
+        Where your money goes
+      </div>
+
+
+      ${
+        sellers.length === 0
+
+          ? `
+
+            <p style="
+              color:#868b92;
+              font-size:13px;
+              padding:14px 0;
+            ">
+              No purchases this month.
+            </p>
+
+          `
+
+          : sellers
+              .slice(
+                0,
+                5
+              )
+              .map(
+                (seller) => {
+
+                  const percentage =
+                    monthSpent > 0
+
+                      ? (
+                          seller.amount /
+                          monthSpent
+                        ) * 100
+
+                      : 0;
+
+
+                  return `
+
+                    <div class="cat-row">
+
+                      <span
+                        class="cat-name"
+                        title="${seller.name}"
+                      >
+                        ${seller.name}
+                      </span>
+
+
+                      <span class="cat-track">
+
+                        <span
+                          class="cat-fill"
+                          style="
+                            width:${percentage}%;
+                          "
+                        ></span>
+
+                      </span>
+
+
+                      <span class="cat-val">
+                        R${seller.amount.toFixed(2)}
+                      </span>
+
+                    </div>
+
+                  `;
+
+                }
+              )
+              .join("")
+      }
+
+    </div>
+
+
+    <!-- FAVOURITE SELLERS -->
+
+    <div class="chart-card">
+
+      <div class="chart-title">
+        Favourite sellers
+      </div>
+
+
+      <div class="top-list">
+
+        ${
+          favouriteSellers.length === 0
+
+            ? `
+
+              <p style="
+                color:#868b92;
+                font-size:13px;
+                padding:14px 0;
+              ">
+                No favourite sellers yet.
+              </p>
+
+            `
+
+            : favouriteSellers
+                .map(
+                  (seller, index) => `
+
+                    <div class="top-row">
+
+                      <span class="top-rank">
+                        ${index + 1}
+                      </span>
+
+
+                      <div
+                        style="
+                          flex:1;
+                        "
+                      >
+
+                        <div>
+                          ${seller.name}
+                        </div>
+
+                        <div
+                          style="
+                            color:#868b92;
+                            font-size:11px;
+                            margin-top:2px;
+                          "
+                        >
+                          R${seller.amount.toFixed(2)}
+                          spent
+                        </div>
+
+                      </div>
+
+
+                      <span class="top-spend">
+
+                        ${seller.visits}
+                        visit${seller.visits === 1 ? "" : "s"}
+
+                      </span>
+
+                    </div>
+
+                  `
+                )
+                .join("")
+        }
+
+      </div>
+
+    </div>
+
+  `;
+
+
+  // ===========================================
+  // REAL SUPABASE WEEKLY CHART
+  // ===========================================
+
+  new Chart(
+    document.getElementById(
+      "spendChart"
+    ),
+    {
+
+      type:
+        "line",
+
+      data: {
+
+        labels:
+          weekDays.map(
+            (item) =>
+              item.day
+          ),
+
+        datasets: [
+
+          {
+
+            data:
+              weekDays.map(
+                (item) =>
+                  item.total
+              ),
+
+            borderColor:
+              GREEN,
+
+            backgroundColor:
+              "rgba(15,124,95,0.1)",
+
+            borderWidth:
+              2.5,
+
+            pointRadius:
+              3,
+
+            tension:
+              0.35,
+
+            fill:
+              true
+
+          }
+
+        ]
+
       },
-    },
-  });
+
+
+      options: {
+
+        responsive:
+          true,
+
+        maintainAspectRatio:
+          false,
+
+
+        plugins: {
+
+          legend: {
+            display:
+              false
+          }
+
+        },
+
+
+        scales: {
+
+          x: {
+
+            grid: {
+              display:
+                false
+            },
+
+            ticks: {
+
+              color:
+                "#6b7280",
+
+              font: {
+                size:
+                  11
+              }
+
+            }
+
+          },
+
+
+          y: {
+
+            grid: {
+              color:
+                "#eef0f2"
+            },
+
+            ticks: {
+
+              color:
+                "#6b7280",
+
+              font: {
+                size:
+                  11
+              },
+
+              callback:
+                function(value) {
+
+                  return `R${value}`;
+
+                }
+
+            },
+
+            beginAtZero:
+              true
+
+          }
+
+        }
+
+      }
+
+    }
+  );
 }
 
 // ============ 4. SELLERS MAP ============

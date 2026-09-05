@@ -496,68 +496,3863 @@ function showAbsaSms(amount) {
     setTimeout(() => sms.remove(), 400);
   }, 4000);
 }
+// ============ 3. ANALYTICS / SMART BOOKS ============
 
-// ============ 3. ANALYTICS ============
-function renderAnalytics() {
-  const peak = HOURLY.reduce((a, b) => (b.sales > a.sales ? b : a));
-  const bestDay = WEEKLY.reduce((a, b) => (b.total > a.total ? b : a));
+
+// ===========================================
+// HELPERS
+// ===========================================
+
+function formatMoney(value) {
+  return `R ${Number(value || 0).toLocaleString("en-ZA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+
+function dateOnly(date) {
+  const year = date.getFullYear();
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+
+
+// ===========================================
+// MAIN ANALYTICS SCREEN
+// ===========================================
+
+async function renderAnalytics() {
+
   screen.innerHTML = `
     <div class="pad">
-      <h1 class="h1">Analytics</h1>
-      <div class="stat-row">
-        <div class="stat"><div class="stat-label">Peak hour</div><div class="stat-value">${peak.hour}</div><div class="stat-sub">${peak.sales} sales</div></div>
-        <div class="stat"><div class="stat-label">Best day</div><div class="stat-value">${bestDay.day}</div><div class="stat-sub">R${bestDay.total}</div></div>
-      </div>
-      <div class="chart-card"><div class="chart-title">Sales by hour</div><canvas id="hourChart"></canvas></div>
-      <div class="chart-card"><div class="chart-title">Weekly earnings</div><canvas id="weekChart"></canvas></div>
-      <div class="chart-card">
-        <div class="chart-title">Top customers</div>
-        <div class="top-list">
-          ${TOP_CUSTOMERS.map((c, i) => `
-            <div class="top-row"><span class="top-rank">${i + 1}</span><span style="flex:1">${c.name}</span><span class="top-spend">R ${c.spent}</span></div>`).join("")}
+
+      <div class="analytics-heading">
+
+        <div>
+          <h1 class="h1">
+            Analytics
+          </h1>
+
+          <p class="analytics-subtitle">
+            Understand how your business is performing
+          </p>
         </div>
+
       </div>
-    </div>`;
 
-  const gridColor = "#eef0f2";
-  new Chart(document.getElementById("hourChart"), {
-    type: "bar",
-    data: {
-      labels: HOURLY.map((h) => h.hour),
-      datasets: [{
-        data: HOURLY.map((h) => h.sales),
-        backgroundColor: HOURLY.map((h) => (h.hour === peak.hour ? GREEN : "#cfe7de")),
-        borderRadius: 4,
-      }],
-    },
-    options: barOpts(gridColor),
-  });
 
-  new Chart(document.getElementById("weekChart"), {
-    type: "line",
-    data: {
-      labels: WEEKLY.map((w) => w.day),
-      datasets: [{
-        data: WEEKLY.map((w) => w.total),
-        borderColor: GREEN, backgroundColor: GREEN, borderWidth: 2.5,
-        pointRadius: 3, tension: 0.35, fill: false,
-      }],
-    },
-    options: barOpts(gridColor),
+      <div class="analytics-tabs">
+
+        <button
+          class="analytics-tab active"
+          id="overviewTab"
+        >
+          Overview
+        </button>
+
+        <button
+          class="analytics-tab"
+          id="smartBooksTab"
+        >
+          Smart Books
+        </button>
+
+      </div>
+
+
+      <div id="analyticsContent"></div>
+
+    </div>
+  `;
+
+
+  const overviewTab =
+    document.getElementById("overviewTab");
+
+  const smartBooksTab =
+    document.getElementById("smartBooksTab");
+
+  const host =
+    document.getElementById("analyticsContent");
+
+
+  async function activateTab(tab) {
+
+    overviewTab.classList.remove("active");
+    smartBooksTab.classList.remove("active");
+
+
+    if (tab === "overview") {
+
+      overviewTab.classList.add("active");
+
+      await renderAnalyticsOverview(host);
+
+    } else {
+
+      smartBooksTab.classList.add("active");
+
+      await renderSmartBooks(host);
+    }
+  }
+
+
+  overviewTab.addEventListener(
+    "click",
+    () => activateTab("overview")
+  );
+
+
+  smartBooksTab.addEventListener(
+    "click",
+    () => activateTab("smartbooks")
+  );
+
+
+  await activateTab("overview");
+}
+
+
+
+// ===========================================
+// ANALYTICS OVERVIEW
+// ===========================================
+
+async function renderAnalyticsOverview(host) {
+
+  host.innerHTML = `
+    <div class="analytics-loading">
+      Loading business analytics...
+    </div>
+  `;
+
+
+  const now = new Date();
+
+
+  const monthStart =
+    new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    );
+
+
+  const nextMonth =
+    new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1
+    );
+
+
+  const { data: rows, error } =
+    await supabase
+      .from("transactions")
+      .select("*")
+      .eq("seller_id", currentUser.id)
+      .eq("status", "paid")
+      .gte(
+        "created_at",
+        monthStart.toISOString()
+      )
+      .lt(
+        "created_at",
+        nextMonth.toISOString()
+      )
+      .order(
+        "created_at",
+        { ascending: true }
+      );
+
+
+  if (error) {
+
+    console.error(
+      "Analytics error:",
+      error
+    );
+
+
+    host.innerHTML = `
+      <p class="analytics-loading">
+        Could not load analytics.
+      </p>
+    `;
+
+    return;
+  }
+
+
+  const payments =
+    rows || [];
+
+
+  // ===========================================
+  // HOURLY SALES
+  // ===========================================
+
+  const hourly =
+    Array.from(
+      { length: 24 },
+      (_, hour) => ({
+        hour,
+        count: 0,
+        value: 0,
+      })
+    );
+
+
+  payments.forEach(
+    (payment) => {
+
+      const hour =
+        new Date(
+          payment.created_at
+        ).getHours();
+
+
+      hourly[hour].count += 1;
+
+      hourly[hour].value +=
+        Number(payment.amount);
+    }
+  );
+
+
+  const peakHour =
+    hourly.reduce(
+      (best, current) =>
+        current.count > best.count
+          ? current
+          : best
+    );
+
+
+
+  // ===========================================
+  // SALES BY DAY
+  // ===========================================
+
+  const dayNames = [
+    "Sun",
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+  ];
+
+
+  const weekly =
+    dayNames.map(
+      (day, index) => ({
+        day,
+        index,
+        total: 0,
+        count: 0,
+      })
+    );
+
+
+  payments.forEach(
+    (payment) => {
+
+      const day =
+        new Date(
+          payment.created_at
+        ).getDay();
+
+
+      weekly[day].total +=
+        Number(payment.amount);
+
+      weekly[day].count += 1;
+    }
+  );
+
+
+  const bestDay =
+    weekly.reduce(
+      (best, current) =>
+        current.total > best.total
+          ? current
+          : best
+    );
+
+
+
+  // ===========================================
+  // TOP CUSTOMERS
+  // ===========================================
+
+  const customerMap = {};
+
+
+  payments.forEach(
+    (payment) => {
+
+      const name =
+        payment.buyer_name ||
+        "Buyer";
+
+
+      if (!customerMap[name]) {
+
+        customerMap[name] = {
+          name,
+          spent: 0,
+          transactions: 0,
+        };
+      }
+
+
+      customerMap[name].spent +=
+        Number(payment.amount);
+
+
+      customerMap[name].transactions +=
+        1;
+    }
+  );
+
+
+  const topCustomers =
+    Object.values(customerMap)
+      .sort(
+        (a, b) =>
+          b.spent - a.spent
+      )
+      .slice(0, 5);
+
+
+
+  // ===========================================
+  // TOTAL DIGITAL REVENUE
+  // ===========================================
+
+  const totalRevenue =
+    payments.reduce(
+      (sum, payment) =>
+        sum +
+        Number(payment.amount),
+      0
+    );
+
+
+
+  // ===========================================
+  // DISPLAY
+  // ===========================================
+
+  host.innerHTML = `
+
+    <div class="overview-banner">
+
+      <div>
+
+        <div class="overview-label">
+          Revenue this month
+        </div>
+
+        <div class="overview-value">
+          ${formatMoney(totalRevenue)}
+        </div>
+
+        <div class="overview-note">
+
+          ${payments.length}
+
+          verified Patela payment${payments.length === 1 ? "" : "s"}
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+
+    <div class="stat-row">
+
+
+      <div class="stat">
+
+        <div class="stat-label">
+          Peak hour
+        </div>
+
+        <div class="stat-value">
+
+          ${
+            peakHour.count > 0
+              ? `${String(
+                  peakHour.hour
+                ).padStart(
+                  2,
+                  "0"
+                )}:00`
+              : "--"
+          }
+
+        </div>
+
+        <div class="stat-sub">
+
+          ${peakHour.count}
+
+          sale${peakHour.count === 1 ? "" : "s"}
+
+        </div>
+
+      </div>
+
+
+
+      <div class="stat">
+
+        <div class="stat-label">
+          Best day
+        </div>
+
+        <div class="stat-value">
+
+          ${
+            bestDay.total > 0
+              ? bestDay.day
+              : "--"
+          }
+
+        </div>
+
+        <div class="stat-sub">
+          ${formatMoney(bestDay.total)}
+        </div>
+
+      </div>
+
+
+    </div>
+
+
+
+    <div class="chart-card">
+
+      <div class="chart-title">
+        Sales by hour
+      </div>
+
+      <canvas id="hourChart"></canvas>
+
+    </div>
+
+
+
+    <div class="chart-card">
+
+      <div class="chart-title">
+        Earnings by day
+      </div>
+
+      <canvas id="weekChart"></canvas>
+
+    </div>
+
+
+
+    <div class="chart-card">
+
+      <div class="chart-title">
+        Top customers
+      </div>
+
+
+      <div class="top-list">
+
+        ${
+          topCustomers.length === 0
+
+            ? `
+                <div class="empty-books">
+                  No customer activity yet.
+                </div>
+              `
+
+            : topCustomers
+                .map(
+                  (customer, i) => `
+
+                    <div class="top-row">
+
+                      <span class="top-rank">
+                        ${i + 1}
+                      </span>
+
+
+                      <div style="flex:1">
+
+                        <div>
+                          ${customer.name}
+                        </div>
+
+                        <div class="customer-transactions">
+
+                          ${customer.transactions}
+
+                          transaction${customer.transactions === 1 ? "" : "s"}
+
+                        </div>
+
+                      </div>
+
+
+                      <span class="top-spend">
+                        ${formatMoney(
+                          customer.spent
+                        )}
+                      </span>
+
+                    </div>
+                  `
+                )
+                .join("")
+        }
+
+      </div>
+
+    </div>
+  `;
+
+
+
+  // ===========================================
+  // CHARTS
+  // ===========================================
+
+  const gridColor =
+    "#eef0f2";
+
+
+  new Chart(
+    document.getElementById(
+      "hourChart"
+    ),
+    {
+
+      type: "bar",
+
+      data: {
+
+        labels:
+          hourly.map(
+            (item) =>
+              `${String(
+                item.hour
+              ).padStart(
+                2,
+                "0"
+              )}:00`
+          ),
+
+        datasets: [
+          {
+
+            data:
+              hourly.map(
+                (item) =>
+                  item.count
+              ),
+
+            backgroundColor:
+              hourly.map(
+                (item) =>
+
+                  item.hour ===
+                    peakHour.hour &&
+                  peakHour.count > 0
+
+                    ? GREEN
+
+                    : "#cfe7de"
+              ),
+
+            borderRadius: 4,
+          },
+        ],
+      },
+
+      options:
+        barOpts(gridColor),
+    }
+  );
+
+
+
+  new Chart(
+    document.getElementById(
+      "weekChart"
+    ),
+    {
+
+      type: "line",
+
+      data: {
+
+        labels:
+          weekly.map(
+            (item) =>
+              item.day
+          ),
+
+        datasets: [
+          {
+
+            data:
+              weekly.map(
+                (item) =>
+                  item.total
+              ),
+
+            borderColor:
+              GREEN,
+
+            backgroundColor:
+              GREEN,
+
+            borderWidth:
+              2.5,
+
+            pointRadius:
+              3,
+
+            tension:
+              0.35,
+
+            fill:
+              false,
+          },
+        ],
+      },
+
+      options:
+        barOpts(gridColor),
+    }
+  );
+}
+
+
+
+// ===========================================
+// SMART BOOKS
+// ===========================================
+
+async function renderSmartBooks(host) {
+
+  host.innerHTML = `
+    <div class="analytics-loading">
+      Preparing Smart Books...
+    </div>
+  `;
+
+
+  const now =
+    new Date();
+
+
+  const monthStart =
+    new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    );
+
+
+  const nextMonth =
+    new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1
+    );
+
+
+  const monthName =
+    now.toLocaleDateString(
+      "en-ZA",
+      {
+        month: "long",
+        year: "numeric",
+      }
+    );
+
+
+
+  // ===========================================
+  // FETCH BUSINESS DATA
+  // ===========================================
+
+  const [
+    transactionsResult,
+    expensesResult,
+    cashSalesResult,
+  ] = await Promise.all([
+
+
+    // DIGITAL SALES
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq(
+        "seller_id",
+        currentUser.id
+      )
+      .eq(
+        "status",
+        "paid"
+      )
+      .gte(
+        "created_at",
+        monthStart.toISOString()
+      )
+      .lt(
+        "created_at",
+        nextMonth.toISOString()
+      )
+      .order(
+        "created_at",
+        { ascending: true }
+      ),
+
+
+    // BUSINESS EXPENSES
+    supabase
+      .from("expenses")
+      .select("*")
+      .eq(
+        "seller_id",
+        currentUser.id
+      )
+      .gte(
+        "expense_date",
+        dateOnly(monthStart)
+      )
+      .lt(
+        "expense_date",
+        dateOnly(nextMonth)
+      )
+      .order(
+        "expense_date",
+        { ascending: false }
+      ),
+
+
+    // CASH SALES
+    supabase
+      .from("cash_sales")
+      .select("*")
+      .eq(
+        "seller_id",
+        currentUser.id
+      )
+      .gte(
+        "sale_date",
+        dateOnly(monthStart)
+      )
+      .lt(
+        "sale_date",
+        dateOnly(nextMonth)
+      )
+      .order(
+        "sale_date",
+        { ascending: false }
+      ),
+  ]);
+
+
+
+  // ===========================================
+  // ERROR CHECK
+  // ===========================================
+
+  if (
+    transactionsResult.error ||
+    expensesResult.error ||
+    cashSalesResult.error
+  ) {
+
+    console.error(
+      "Smart Books error:",
+      transactionsResult.error ||
+      expensesResult.error ||
+      cashSalesResult.error
+    );
+
+
+    host.innerHTML = `
+      <div class="empty-books">
+        Could not load Smart Books.
+      </div>
+    `;
+
+    return;
+  }
+
+
+
+  const digitalSales =
+    transactionsResult.data || [];
+
+
+  const expenses =
+    expensesResult.data || [];
+
+
+  const cashSales =
+    cashSalesResult.data || [];
+
+
+
+  // ===========================================
+  // REVENUE
+  // ===========================================
+
+  const digitalRevenue =
+    digitalSales.reduce(
+      (total, sale) =>
+        total +
+        Number(sale.amount),
+      0
+    );
+
+
+  const cashRevenue =
+    cashSales.reduce(
+      (total, sale) =>
+        total +
+        Number(sale.amount),
+      0
+    );
+
+
+  const revenue =
+    digitalRevenue +
+    cashRevenue;
+
+
+
+  // ===========================================
+  // COST OF SALES
+  // ===========================================
+
+  const costOfSales =
+    expenses
+      .filter(
+        (expense) =>
+          expense.category ===
+          "stock"
+      )
+      .reduce(
+        (total, expense) =>
+          total +
+          Number(expense.amount),
+        0
+      );
+
+
+
+  // ===========================================
+  // OPERATING EXPENSES
+  // ===========================================
+
+  const operatingExpenses =
+    expenses
+      .filter(
+        (expense) =>
+          expense.category !==
+          "stock"
+      )
+      .reduce(
+        (total, expense) =>
+          total +
+          Number(expense.amount),
+        0
+      );
+
+
+
+  const totalExpenses =
+    costOfSales +
+    operatingExpenses;
+
+
+  const grossProfit =
+    revenue -
+    costOfSales;
+
+
+  const netProfit =
+    grossProfit -
+    operatingExpenses;
+
+
+  const netCashFlow =
+    revenue -
+    totalExpenses;
+
+
+  const profitMargin =
+    revenue > 0
+      ? (
+          netProfit /
+          revenue
+        ) * 100
+      : 0;
+
+
+
+  // ===========================================
+  // EXPENSE CATEGORIES
+  // ===========================================
+
+  const categoryLabels = {
+
+    stock:
+      "Stock / Inventory",
+
+    transport:
+      "Transport",
+
+    rent:
+      "Rent",
+
+    utilities:
+      "Utilities",
+
+    wages:
+      "Wages",
+
+    equipment:
+      "Equipment",
+
+    other:
+      "Other",
+  };
+
+
+  const expenseGroups = {};
+
+
+  expenses.forEach(
+    (expense) => {
+
+      const category =
+        expense.category ||
+        "other";
+
+
+      if (
+        !expenseGroups[category]
+      ) {
+
+        expenseGroups[category] =
+          0;
+      }
+
+
+      expenseGroups[category] +=
+        Number(expense.amount);
+    }
+  );
+
+
+
+  // ===========================================
+  // DISPLAY SMART BOOKS
+  // ===========================================
+
+  host.innerHTML = `
+
+    <div class="smartbooks-header">
+
+
+      <div>
+
+        <div class="smartbooks-brand">
+          Smart Books
+        </div>
+
+
+        <div class="smartbooks-month">
+          ${monthName}
+        </div>
+
+
+        <div class="smartbooks-description">
+
+          Financial insights automatically prepared
+          from your Patela transactions, cash sales
+          and recorded business expenses.
+
+        </div>
+
+      </div>
+
+
+
+
+<div class="smartbooks-actions">
+
+  <button
+    class="download-report-btn"
+    id="downloadReportBtn"
+  >
+    ↓ Report
+  </button>
+
+  <button
+    class="cash-sale-btn"
+    id="addCashSaleBtn"
+  >
+    + Cash Sale
+  </button>
+
+  <button
+    class="add-expense-btn"
+    id="addExpenseBtn"
+  >
+    + Expense
+  </button>
+
+</div>
+
+
+    </div>
+
+
+
+    <!-- =====================================
+         FINANCIAL SUMMARY
+    ====================================== -->
+
+
+    <div class="books-summary-grid">
+
+
+      <div class="books-summary-card">
+
+        <div class="books-summary-label">
+          Revenue
+        </div>
+
+
+        <div class="books-summary-value positive">
+          ${formatMoney(revenue)}
+        </div>
+
+
+        <div class="books-summary-sub">
+
+          ${digitalSales.length}
+          digital ·
+
+          ${cashSales.length}
+          cash
+
+        </div>
+
+      </div>
+
+
+
+      <div class="books-summary-card">
+
+        <div class="books-summary-label">
+          Expenses
+        </div>
+
+
+        <div class="books-summary-value negative">
+          ${formatMoney(totalExpenses)}
+        </div>
+
+
+        <div class="books-summary-sub">
+
+          ${expenses.length}
+
+          recorded expense${expenses.length === 1 ? "" : "s"}
+
+        </div>
+
+      </div>
+
+
+
+      <div class="books-summary-card">
+
+        <div class="books-summary-label">
+          Net profit
+        </div>
+
+
+        <div
+          class="
+            books-summary-value
+            ${
+              netProfit >= 0
+                ? "positive"
+                : "negative"
+            }
+          "
+        >
+
+          ${formatMoney(netProfit)}
+
+        </div>
+
+
+        <div class="books-summary-sub">
+          ${profitMargin.toFixed(1)}% margin
+        </div>
+
+      </div>
+
+
+
+      <div class="books-summary-card">
+
+        <div class="books-summary-label">
+          Net cash flow
+        </div>
+
+
+        <div
+          class="
+            books-summary-value
+            ${
+              netCashFlow >= 0
+                ? "positive"
+                : "negative"
+            }
+          "
+        >
+
+          ${formatMoney(netCashFlow)}
+
+        </div>
+
+
+        <div class="books-summary-sub">
+          Operating cash movement
+        </div>
+
+      </div>
+
+
+    </div>
+
+
+
+    <!-- =====================================
+         INCOME STATEMENT
+    ====================================== -->
+
+
+    <div class="books-card">
+
+
+      <div class="books-card-head">
+
+        <div>
+
+          <div class="books-card-title">
+            Income Statement
+          </div>
+
+          <div class="books-card-period">
+            For the month of ${monthName}
+          </div>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="statement-table">
+
+
+        <div class="statement-section">
+          Revenue
+        </div>
+
+
+        <div class="statement-row">
+
+          <span>
+            Patela digital sales
+          </span>
+
+          <strong>
+            ${formatMoney(digitalRevenue)}
+          </strong>
+
+        </div>
+
+
+
+        <div class="statement-row">
+
+          <span>
+            Cash sales
+          </span>
+
+          <strong>
+            ${formatMoney(cashRevenue)}
+          </strong>
+
+        </div>
+
+
+
+        <div
+          class="
+            statement-row
+            statement-total
+          "
+        >
+
+          <span>
+            Total Revenue
+          </span>
+
+          <strong>
+            ${formatMoney(revenue)}
+          </strong>
+
+        </div>
+
+
+
+        <div class="statement-section">
+          Cost of Sales
+        </div>
+
+
+        <div class="statement-row">
+
+          <span>
+            Stock / Inventory
+          </span>
+
+          <span>
+            (${formatMoney(costOfSales)})
+          </span>
+
+        </div>
+
+
+
+        <div
+          class="
+            statement-row
+            statement-total
+          "
+        >
+
+          <span>
+            Gross Profit
+          </span>
+
+          <strong>
+            ${formatMoney(grossProfit)}
+          </strong>
+
+        </div>
+
+
+
+        <div class="statement-section">
+          Operating Expenses
+        </div>
+
+
+        ${
+          Object
+            .entries(
+              expenseGroups
+            )
+            .filter(
+              ([category]) =>
+                category !==
+                "stock"
+            )
+            .map(
+              ([category, value]) => `
+
+                <div class="statement-row">
+
+                  <span>
+
+                    ${
+                      categoryLabels[
+                        category
+                      ] ||
+                      category
+                    }
+
+                  </span>
+
+                  <span>
+                    (${formatMoney(value)})
+                  </span>
+
+                </div>
+
+              `
+            )
+            .join("") ||
+
+          `
+
+            <div
+              class="
+                statement-row
+                muted-row
+              "
+            >
+
+              <span>
+                No operating expenses recorded
+              </span>
+
+              <span>
+                ${formatMoney(0)}
+              </span>
+
+            </div>
+
+          `
+        }
+
+
+
+        <div
+          class="
+            statement-row
+            statement-final
+          "
+        >
+
+          <span>
+            NET PROFIT
+          </span>
+
+          <strong
+            class="
+              ${
+                netProfit >= 0
+                  ? "positive-text"
+                  : "negative-text"
+              }
+            "
+          >
+
+            ${formatMoney(netProfit)}
+
+          </strong>
+
+        </div>
+
+
+      </div>
+
+    </div>
+
+
+
+    <!-- =====================================
+         CASH FLOW STATEMENT
+    ====================================== -->
+
+
+    <div class="books-card">
+
+
+      <div class="books-card-head">
+
+        <div>
+
+          <div class="books-card-title">
+            Cash Flow Statement
+          </div>
+
+
+          <div class="books-card-period">
+            For the month of ${monthName}
+          </div>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="statement-table">
+
+
+        <div class="statement-section">
+          Cash Inflows
+        </div>
+
+
+
+        <div class="statement-row">
+
+          <span>
+            Patela payments received
+          </span>
+
+          <strong class="positive-text">
+            +${formatMoney(digitalRevenue)}
+          </strong>
+
+        </div>
+
+
+
+        <div class="statement-row">
+
+          <span>
+            Cash sales received
+          </span>
+
+          <strong class="positive-text">
+            +${formatMoney(cashRevenue)}
+          </strong>
+
+        </div>
+
+
+
+        <div
+          class="
+            statement-row
+            statement-total
+          "
+        >
+
+          <span>
+            Total Cash In
+          </span>
+
+          <strong>
+            ${formatMoney(revenue)}
+          </strong>
+
+        </div>
+
+
+
+        <div class="statement-section">
+          Cash Outflows
+        </div>
+
+
+        ${
+          Object
+            .entries(
+              expenseGroups
+            )
+            .map(
+              ([category, value]) => `
+
+                <div class="statement-row">
+
+                  <span>
+
+                    ${
+                      categoryLabels[
+                        category
+                      ] ||
+                      category
+                    }
+
+                  </span>
+
+                  <span class="negative-text">
+                    -${formatMoney(value)}
+                  </span>
+
+                </div>
+
+              `
+            )
+            .join("") ||
+
+          `
+
+            <div
+              class="
+                statement-row
+                muted-row
+              "
+            >
+
+              <span>
+                No expenses recorded
+              </span>
+
+              <span>
+                ${formatMoney(0)}
+              </span>
+
+            </div>
+
+          `
+        }
+
+
+
+        <div
+          class="
+            statement-row
+            statement-total
+          "
+        >
+
+          <span>
+            Total Cash Out
+          </span>
+
+          <strong>
+            ${formatMoney(totalExpenses)}
+          </strong>
+
+        </div>
+
+
+
+        <div
+          class="
+            statement-row
+            statement-final
+          "
+        >
+
+          <span>
+            NET CASH FLOW
+          </span>
+
+          <strong
+            class="
+              ${
+                netCashFlow >= 0
+                  ? "positive-text"
+                  : "negative-text"
+              }
+            "
+          >
+
+            ${formatMoney(netCashFlow)}
+
+          </strong>
+
+        </div>
+
+
+      </div>
+
+    </div>
+
+
+
+    <!-- =====================================
+         RECENT EXPENSES
+    ====================================== -->
+
+
+    <div class="books-card">
+
+
+      <div class="books-card-title">
+        Recent Expenses
+      </div>
+
+
+      <div class="expense-list">
+
+
+        ${
+          expenses.length === 0
+
+            ? `
+
+                <div class="empty-books">
+
+                  No expenses recorded yet.
+
+                  <br><br>
+
+                  Add your first business expense
+                  to start building your
+                  financial statements.
+
+                </div>
+
+              `
+
+            : expenses
+                .slice(
+                  0,
+                  8
+                )
+                .map(
+                  (expense) => `
+
+                    <div class="expense-row">
+
+
+                      <div class="expense-icon">
+                        ↓
+                      </div>
+
+
+                      <div class="expense-details">
+
+
+                        <div class="expense-name">
+
+                          ${
+                            expense.description ||
+
+                            categoryLabels[
+                              expense.category
+                            ] ||
+
+                            "Expense"
+                          }
+
+                        </div>
+
+
+                        <div class="expense-meta">
+
+                          ${
+                            categoryLabels[
+                              expense.category
+                            ] ||
+
+                            expense.category
+                          }
+
+                          ·
+
+                          ${
+                            new Date(
+                              expense.expense_date +
+                              "T00:00:00"
+                            )
+                            .toLocaleDateString(
+                              "en-ZA",
+                              {
+                                day:
+                                  "numeric",
+
+                                month:
+                                  "short",
+                              }
+                            )
+                          }
+
+                        </div>
+
+
+                      </div>
+
+
+                      <div class="expense-amount">
+
+                        -${formatMoney(
+                          expense.amount
+                        )}
+
+                      </div>
+
+
+                    </div>
+
+                  `
+                )
+                .join("")
+        }
+
+
+      </div>
+
+    </div>
+
+
+
+    <!-- =====================================
+         RECENT CASH SALES
+    ====================================== -->
+
+
+    <div class="books-card">
+
+
+      <div class="books-card-title">
+        Recent Cash Sales
+      </div>
+
+
+      <div class="expense-list">
+
+
+        ${
+          cashSales.length === 0
+
+            ? `
+
+                <div class="empty-books">
+
+                  No cash sales recorded yet.
+
+                </div>
+
+              `
+
+            : cashSales
+                .slice(
+                  0,
+                  8
+                )
+                .map(
+                  (sale) => `
+
+                    <div class="expense-row">
+
+
+                      <div
+                        class="expense-icon"
+                        style="
+                          background:#e8f7f1;
+                          color:#0f7c5f;
+                        "
+                      >
+                        ↑
+                      </div>
+
+
+                      <div class="expense-details">
+
+
+                        <div class="expense-name">
+
+                          ${
+                            sale.description ||
+                            "Cash sale"
+                          }
+
+                        </div>
+
+
+                        <div class="expense-meta">
+
+                          ${
+                            sale.customer_name
+                              ? sale.customer_name +
+                                " · "
+                              : ""
+                          }
+
+                          ${
+                            new Date(
+                              sale.sale_date +
+                              "T00:00:00"
+                            )
+                            .toLocaleDateString(
+                              "en-ZA",
+                              {
+                                day:
+                                  "numeric",
+
+                                month:
+                                  "short",
+                              }
+                            )
+                          }
+
+                        </div>
+
+
+                      </div>
+
+
+                      <div
+                        class="expense-amount"
+                        style="
+                          color:#0f7c5f;
+                        "
+                      >
+
+                        +${formatMoney(
+                          sale.amount
+                        )}
+
+                      </div>
+
+
+                    </div>
+
+                  `
+                )
+                .join("")
+        }
+
+
+      </div>
+
+    </div>
+
+
+
+    <div class="books-disclaimer">
+
+      Smart Books provides management information
+      based on transactions, cash sales and expenses
+      recorded in Patela.
+
+      It is not an audited financial statement.
+
+    </div>
+  `;
+
+
+
+  // ===========================================
+  // BUTTON EVENTS
+  // ===========================================
+
+  document
+    .getElementById(
+      "addExpenseBtn"
+    )
+    .addEventListener(
+      "click",
+      () => {
+
+        openAddExpense(
+          () =>
+            renderSmartBooks(
+              host
+            )
+        );
+
+      }
+    );
+
+
+  document
+    .getElementById(
+      "addCashSaleBtn"
+    )
+    .addEventListener(
+      "click",
+      () => {
+
+        openAddCashSale(
+          () =>
+            renderSmartBooks(
+              host
+            )
+        );
+
+      }
+    );
+
+
+
+    document
+  .getElementById("downloadReportBtn")
+  .addEventListener("click", () => {
+
+    generateSmartBooksPDF({
+
+      monthName,
+
+      digitalRevenue,
+
+      cashRevenue,
+
+      revenue,
+
+      costOfSales,
+
+      grossProfit,
+
+      operatingExpenses,
+
+      totalExpenses,
+
+      netProfit,
+
+      netCashFlow,
+
+      profitMargin,
+
+      expenseGroups,
+
+      categoryLabels,
+
+      digitalSales,
+
+      cashSales,
+
+      expenses
+
+    });
+
   });
 }
+
+
+
+// ===========================================
+// ADD EXPENSE
+// ===========================================
+
+function openAddExpense(onSaved) {
+
+  const div =
+    document.createElement(
+      "div"
+    );
+
+
+  div.className =
+    "overlay";
+
+
+  const today =
+    dateOnly(
+      new Date()
+    );
+
+
+  div.innerHTML = `
+
+    <div class="sheet">
+
+
+      <div class="handle"></div>
+
+
+      <button
+        class="sheet-close"
+        id="expenseClose"
+      >
+
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          width="18"
+          height="18"
+        >
+
+          <path d="M18 6 6 18M6 6l12 12"/>
+
+        </svg>
+
+      </button>
+
+
+
+      <h2 class="sheet-title">
+        Add business expense
+      </h2>
+
+
+
+      <label class="field-label">
+        Amount
+      </label>
+
+
+      <input
+        class="input"
+        id="expenseAmount"
+        inputmode="decimal"
+        placeholder="0.00"
+      />
+
+
+
+      <label class="field-label">
+        Category
+      </label>
+
+
+      <select
+        class="input"
+        id="expenseCategory"
+      >
+
+        <option value="stock">
+          Stock / Inventory
+        </option>
+
+        <option value="transport">
+          Transport
+        </option>
+
+        <option value="rent">
+          Rent
+        </option>
+
+        <option value="utilities">
+          Utilities
+        </option>
+
+        <option value="wages">
+          Wages
+        </option>
+
+        <option value="equipment">
+          Equipment
+        </option>
+
+        <option value="other">
+          Other
+        </option>
+
+      </select>
+
+
+
+      <label class="field-label">
+        Description
+      </label>
+
+
+      <input
+        class="input"
+        id="expenseDescription"
+        placeholder="e.g. Bought stock for the shop"
+      />
+
+
+
+      <label class="field-label">
+        Date
+      </label>
+
+
+      <input
+        class="input"
+        id="expenseDate"
+        type="date"
+        value="${today}"
+      />
+
+
+
+      <label class="field-label">
+        Payment method
+      </label>
+
+
+      <select
+        class="input"
+        id="expenseMethod"
+      >
+
+        <option value="cash">
+          Cash
+        </option>
+
+        <option value="bank">
+          Bank
+        </option>
+
+        <option value="patela">
+          Patela
+        </option>
+
+      </select>
+
+
+
+      <p
+        class="hint error"
+        id="expenseError"
+        style="min-height:18px"
+      ></p>
+
+
+
+      <button
+        class="primary-btn"
+        id="saveExpenseBtn"
+      >
+        Save expense
+      </button>
+
+
+    </div>
+  `;
+
+
+
+  document
+    .getElementById("app")
+    .appendChild(div);
+
+
+
+  const saveBtn =
+    div.querySelector(
+      "#saveExpenseBtn"
+    );
+
+
+  const errorEl =
+    div.querySelector(
+      "#expenseError"
+    );
+
+
+
+  saveBtn.addEventListener(
+    "click",
+    async () => {
+
+      const expenseAmount =
+        parseFloat(
+          div
+            .querySelector(
+              "#expenseAmount"
+            )
+            .value
+        );
+
+
+      const category =
+        div
+          .querySelector(
+            "#expenseCategory"
+          )
+          .value;
+
+
+      const description =
+        div
+          .querySelector(
+            "#expenseDescription"
+          )
+          .value
+          .trim();
+
+
+      const expenseDate =
+        div
+          .querySelector(
+            "#expenseDate"
+          )
+          .value;
+
+
+      const paymentMethod =
+        div
+          .querySelector(
+            "#expenseMethod"
+          )
+          .value;
+
+
+
+      if (
+        !expenseAmount ||
+        expenseAmount <= 0
+      ) {
+
+        errorEl.textContent =
+          "Enter a valid expense amount.";
+
+        return;
+      }
+
+
+
+      saveBtn.disabled =
+        true;
+
+
+      saveBtn.textContent =
+        "Saving...";
+
+
+
+      const { error } =
+        await supabase
+          .from("expenses")
+          .insert({
+
+            seller_id:
+              currentUser.id,
+
+            amount:
+              expenseAmount,
+
+            category,
+
+            description,
+
+            expense_date:
+              expenseDate,
+
+            payment_method:
+              paymentMethod,
+          });
+
+
+
+      if (error) {
+
+        console.error(
+          "Expense error:",
+          error
+        );
+
+
+        errorEl.textContent =
+          "Could not save expense.";
+
+
+        saveBtn.disabled =
+          false;
+
+
+        saveBtn.textContent =
+          "Save expense";
+
+
+        return;
+      }
+
+
+
+      div.remove();
+
+
+
+      if (onSaved) {
+
+        await onSaved();
+
+      }
+
+    }
+  );
+
+
+
+  div
+    .querySelector(
+      "#expenseClose"
+    )
+    .addEventListener(
+      "click",
+      () =>
+        div.remove()
+    );
+
+
+
+  div.addEventListener(
+    "click",
+    (event) => {
+
+      if (
+        event.target === div
+      ) {
+
+        div.remove();
+
+      }
+
+    }
+  );
+}
+
+
+
+// ===========================================
+// ADD CASH SALE
+// ===========================================
+
+function openAddCashSale(onSaved) {
+
+  const div =
+    document.createElement(
+      "div"
+    );
+
+
+  div.className =
+    "overlay";
+
+
+  const today =
+    dateOnly(
+      new Date()
+    );
+
+
+  div.innerHTML = `
+
+    <div class="sheet">
+
+
+      <div class="handle"></div>
+
+
+      <button
+        class="sheet-close"
+        id="cashSaleClose"
+      >
+
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          width="18"
+          height="18"
+        >
+
+          <path d="M18 6 6 18M6 6l12 12"/>
+
+        </svg>
+
+      </button>
+
+
+
+      <h2 class="sheet-title">
+        Record cash sale
+      </h2>
+
+
+      <p
+        style="
+          margin-top:-8px;
+          margin-bottom:18px;
+          font-size:12px;
+          color:#868b92;
+        "
+      >
+
+        Record a sale that was paid
+        for in cash.
+
+      </p>
+
+
+
+      <label class="field-label">
+        Amount
+      </label>
+
+
+      <input
+        class="input"
+        id="cashSaleAmount"
+        inputmode="decimal"
+        placeholder="0.00"
+      />
+
+
+
+      <label class="field-label">
+        Description
+      </label>
+
+
+      <input
+        class="input"
+        id="cashSaleDescription"
+        placeholder="e.g. 2 Kotas and a cold drink"
+      />
+
+
+
+      <label class="field-label">
+        Customer name
+      </label>
+
+
+      <input
+        class="input"
+        id="cashSaleCustomer"
+        placeholder="Optional"
+      />
+
+
+
+      <label class="field-label">
+        Date
+      </label>
+
+
+      <input
+        class="input"
+        id="cashSaleDate"
+        type="date"
+        value="${today}"
+      />
+
+
+
+      <p
+        class="hint error"
+        id="cashSaleError"
+        style="min-height:18px"
+      ></p>
+
+
+
+      <button
+        class="primary-btn"
+        id="saveCashSaleBtn"
+      >
+        Record cash sale
+      </button>
+
+
+    </div>
+  `;
+
+
+
+  document
+    .getElementById("app")
+    .appendChild(div);
+
+
+
+  const saveBtn =
+    div.querySelector(
+      "#saveCashSaleBtn"
+    );
+
+
+  const errorEl =
+    div.querySelector(
+      "#cashSaleError"
+    );
+
+
+
+  saveBtn.addEventListener(
+    "click",
+    async () => {
+
+      const cashAmount =
+        parseFloat(
+          div
+            .querySelector(
+              "#cashSaleAmount"
+            )
+            .value
+        );
+
+
+      const description =
+        div
+          .querySelector(
+            "#cashSaleDescription"
+          )
+          .value
+          .trim();
+
+
+      const customerName =
+        div
+          .querySelector(
+            "#cashSaleCustomer"
+          )
+          .value
+          .trim();
+
+
+      const saleDate =
+        div
+          .querySelector(
+            "#cashSaleDate"
+          )
+          .value;
+
+
+
+      if (
+        !cashAmount ||
+        cashAmount <= 0
+      ) {
+
+        errorEl.textContent =
+          "Enter a valid sale amount.";
+
+        return;
+      }
+
+
+
+      saveBtn.disabled =
+        true;
+
+
+      saveBtn.textContent =
+        "Saving...";
+
+
+
+      const { error } =
+        await supabase
+          .from("cash_sales")
+          .insert({
+
+            seller_id:
+              currentUser.id,
+
+            amount:
+              cashAmount,
+
+            description,
+
+            customer_name:
+              customerName ||
+              null,
+
+            sale_date:
+              saleDate,
+          });
+
+
+
+      if (error) {
+
+        console.error(
+          "Cash sale error:",
+          error
+        );
+
+
+        errorEl.textContent =
+          "Could not record cash sale.";
+
+
+        saveBtn.disabled =
+          false;
+
+
+        saveBtn.textContent =
+          "Record cash sale";
+
+
+        return;
+      }
+
+
+
+      div.remove();
+
+
+
+      if (onSaved) {
+
+        await onSaved();
+
+      }
+
+    }
+  );
+
+
+
+  div
+    .querySelector(
+      "#cashSaleClose"
+    )
+    .addEventListener(
+      "click",
+      () =>
+        div.remove()
+    );
+
+
+
+  div.addEventListener(
+    "click",
+    (event) => {
+
+      if (
+        event.target === div
+      ) {
+
+        div.remove();
+
+      }
+
+    }
+  );
+}
+
+// ===========================================
+// DOWNLOAD SMART BOOKS PDF
+// ===========================================
+
+function generateSmartBooksPDF(data) {
+
+  const {
+    monthName,
+    digitalRevenue,
+    cashRevenue,
+    revenue,
+    costOfSales,
+    grossProfit,
+    operatingExpenses,
+    totalExpenses,
+    netProfit,
+    netCashFlow,
+    profitMargin,
+    expenseGroups,
+    categoryLabels,
+    digitalSales,
+    cashSales,
+    expenses
+  } = data;
+
+
+  // -------------------------------------------
+  // CHECK PDF LIBRARY
+  // -------------------------------------------
+
+  if (!window.jspdf) {
+
+    alert("PDF library could not be loaded.");
+
+    return;
+  }
+
+
+  const { jsPDF } =
+    window.jspdf;
+
+
+  const doc =
+    new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4"
+    });
+
+
+  const pageWidth =
+    doc.internal.pageSize.getWidth();
+
+
+  const margin =
+    16;
+
+
+  let y =
+    18;
+
+
+  // -------------------------------------------
+  // BUSINESS DETAILS
+  // -------------------------------------------
+
+  const businessName =
+    currentUser?.user_metadata?.business_name ||
+    currentUser?.user_metadata?.name ||
+    "Patela Seller";
+
+
+  const sellerName =
+    currentUser?.user_metadata?.name ||
+    businessName;
+
+
+  const generatedDate =
+    new Date().toLocaleDateString(
+      "en-ZA",
+      {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      }
+    );
+
+
+  // ===========================================
+  // HEADER
+  // ===========================================
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+
+  doc.setFontSize(23);
+
+
+  doc.setTextColor(
+    15,
+    124,
+    95
+  );
+
+
+  doc.text(
+    "Patela",
+    margin,
+    y
+  );
+
+
+  doc.setFontSize(9);
+
+
+  doc.text(
+    "SMART BOOKS",
+    margin,
+    y + 7
+  );
+
+
+  doc.setTextColor(
+    40,
+    40,
+    40
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
+
+  doc.text(
+    "Financial Management Report",
+    pageWidth - margin,
+    y,
+    {
+      align: "right"
+    }
+  );
+
+
+  doc.setTextColor(
+    110,
+    110,
+    110
+  );
+
+
+  doc.text(
+    monthName,
+    pageWidth - margin,
+    y + 6,
+    {
+      align: "right"
+    }
+  );
+
+
+  y += 20;
+
+
+  // -------------------------------------------
+  // GREEN LINE
+  // -------------------------------------------
+
+  doc.setDrawColor(
+    15,
+    124,
+    95
+  );
+
+
+  doc.setLineWidth(
+    0.7
+  );
+
+
+  doc.line(
+    margin,
+    y,
+    pageWidth - margin,
+    y
+  );
+
+
+  y += 10;
+
+
+  // ===========================================
+  // MERCHANT DETAILS
+  // ===========================================
+
+  doc.setTextColor(
+    30,
+    30,
+    30
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+
+  doc.setFontSize(14);
+
+
+  doc.text(
+    businessName,
+    margin,
+    y
+  );
+
+
+  y += 7;
+
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
+
+  doc.setFontSize(9);
+
+
+  doc.setTextColor(
+    100,
+    100,
+    100
+  );
+
+
+  doc.text(
+    `Seller: ${sellerName}`,
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  doc.text(
+    `Patela account: ${ACCOUNT_CODE}`,
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  doc.text(
+    `Reporting period: ${monthName}`,
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  doc.text(
+    `Generated: ${generatedDate}`,
+    margin,
+    y
+  );
+
+
+  y += 13;
+
+
+  // ===========================================
+  // FINANCIAL SUMMARY
+  // ===========================================
+
+  doc.setTextColor(
+    30,
+    30,
+    30
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+
+  doc.setFontSize(14);
+
+
+  doc.text(
+    "Financial Summary",
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  doc.autoTable({
+
+    startY: y,
+
+    theme: "grid",
+
+    head: [[
+      "Revenue",
+      "Expenses",
+      "Net Profit",
+      "Margin"
+    ]],
+
+    body: [[
+      formatMoney(revenue),
+      formatMoney(totalExpenses),
+      formatMoney(netProfit),
+      `${profitMargin.toFixed(1)}%`
+    ]],
+
+    headStyles: {
+
+      fillColor: [
+        15,
+        124,
+        95
+      ],
+
+      textColor: [
+        255,
+        255,
+        255
+      ],
+
+      fontStyle: "bold"
+    },
+
+    styles: {
+
+      fontSize: 9,
+
+      cellPadding: 4,
+
+      halign: "center"
+    },
+
+    margin: {
+      left: margin,
+      right: margin
+    }
+
+  });
+
+
+  y =
+    doc.lastAutoTable.finalY +
+    13;
+
+
+  // ===========================================
+  // INCOME STATEMENT
+  // ===========================================
+
+  doc.setTextColor(
+    30,
+    30,
+    30
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+
+  doc.setFontSize(14);
+
+
+  doc.text(
+    "Income Statement",
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
+
+  doc.setFontSize(8);
+
+
+  doc.setTextColor(
+    110,
+    110,
+    110
+  );
+
+
+  doc.text(
+    `For the month of ${monthName}`,
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  const incomeRows = [
+
+    [
+      "REVENUE",
+      ""
+    ],
+
+    [
+      "Patela digital sales",
+      formatMoney(
+        digitalRevenue
+      )
+    ],
+
+    [
+      "Cash sales",
+      formatMoney(
+        cashRevenue
+      )
+    ],
+
+    [
+      "Total Revenue",
+      formatMoney(
+        revenue
+      )
+    ],
+
+    [
+      "",
+      ""
+    ],
+
+    [
+      "COST OF SALES",
+      ""
+    ],
+
+    [
+      "Stock / Inventory",
+      `(${formatMoney(
+        costOfSales
+      )})`
+    ],
+
+    [
+      "Gross Profit",
+      formatMoney(
+        grossProfit
+      )
+    ],
+
+    [
+      "",
+      ""
+    ],
+
+    [
+      "OPERATING EXPENSES",
+      ""
+    ]
+  ];
+
+
+  Object
+    .entries(expenseGroups)
+    .filter(
+      ([category]) =>
+        category !== "stock"
+    )
+    .forEach(
+      ([category, value]) => {
+
+        incomeRows.push([
+
+          categoryLabels[
+            category
+          ] || category,
+
+          `(${formatMoney(
+            value
+          )})`
+
+        ]);
+
+      }
+    );
+
+
+  if (
+    Object
+      .entries(expenseGroups)
+      .filter(
+        ([category]) =>
+          category !== "stock"
+      )
+      .length === 0
+  ) {
+
+    incomeRows.push([
+
+      "No operating expenses recorded",
+
+      formatMoney(0)
+
+    ]);
+
+  }
+
+
+  incomeRows.push(
+
+    [
+      "Total Operating Expenses",
+
+      formatMoney(
+        operatingExpenses
+      )
+    ],
+
+    [
+      "NET PROFIT",
+
+      formatMoney(
+        netProfit
+      )
+    ]
+
+  );
+
+
+  doc.autoTable({
+
+    startY: y,
+
+    theme: "plain",
+
+    body: incomeRows,
+
+    columnStyles: {
+
+      0: {
+        cellWidth: 120
+      },
+
+      1: {
+        halign: "right"
+      }
+
+    },
+
+    styles: {
+
+      fontSize: 9,
+
+      cellPadding: 2.5
+    },
+
+    didParseCell(hookData) {
+
+      const label =
+        hookData.row.raw?.[0];
+
+
+      if (
+        [
+          "REVENUE",
+          "COST OF SALES",
+          "OPERATING EXPENSES"
+        ].includes(label)
+      ) {
+
+        hookData.cell.styles.fontStyle =
+          "bold";
+
+
+        hookData.cell.styles.textColor = [
+          15,
+          124,
+          95
+        ];
+
+      }
+
+
+      if (
+        [
+          "Total Revenue",
+          "Gross Profit",
+          "Total Operating Expenses",
+          "NET PROFIT"
+        ].includes(label)
+      ) {
+
+        hookData.cell.styles.fontStyle =
+          "bold";
+
+      }
+
+    },
+
+    margin: {
+      left: margin,
+      right: margin
+    }
+
+  });
+
+
+  y =
+    doc.lastAutoTable.finalY +
+    14;
+
+
+  // ===========================================
+  // NEW PAGE IF NEEDED
+  // ===========================================
+
+  if (y > 215) {
+
+    doc.addPage();
+
+    y = 18;
+
+  }
+
+
+  // ===========================================
+  // CASH FLOW STATEMENT
+  // ===========================================
+
+  doc.setTextColor(
+    30,
+    30,
+    30
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+
+  doc.setFontSize(14);
+
+
+  doc.text(
+    "Cash Flow Statement",
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
+
+  doc.setFontSize(8);
+
+
+  doc.setTextColor(
+    110,
+    110,
+    110
+  );
+
+
+  doc.text(
+    `For the month of ${monthName}`,
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  const cashFlowRows = [
+
+    [
+      "CASH INFLOWS",
+      ""
+    ],
+
+    [
+      "Patela payments received",
+      formatMoney(
+        digitalRevenue
+      )
+    ],
+
+    [
+      "Cash sales received",
+      formatMoney(
+        cashRevenue
+      )
+    ],
+
+    [
+      "Total Cash In",
+      formatMoney(
+        revenue
+      )
+    ],
+
+    [
+      "",
+      ""
+    ],
+
+    [
+      "CASH OUTFLOWS",
+      ""
+    ]
+  ];
+
+
+  Object
+    .entries(expenseGroups)
+    .forEach(
+      ([category, value]) => {
+
+        cashFlowRows.push([
+
+          categoryLabels[
+            category
+          ] || category,
+
+          `(${formatMoney(
+            value
+          )})`
+
+        ]);
+
+      }
+    );
+
+
+  if (
+    expenses.length === 0
+  ) {
+
+    cashFlowRows.push([
+
+      "No expenses recorded",
+
+      formatMoney(0)
+
+    ]);
+
+  }
+
+
+  cashFlowRows.push(
+
+    [
+      "Total Cash Out",
+
+      formatMoney(
+        totalExpenses
+      )
+    ],
+
+    [
+      "NET CASH FLOW",
+
+      formatMoney(
+        netCashFlow
+      )
+    ]
+
+  );
+
+
+  doc.autoTable({
+
+    startY: y,
+
+    theme: "plain",
+
+    body: cashFlowRows,
+
+    columnStyles: {
+
+      0: {
+        cellWidth: 120
+      },
+
+      1: {
+        halign: "right"
+      }
+
+    },
+
+    styles: {
+
+      fontSize: 9,
+
+      cellPadding: 2.5
+    },
+
+    didParseCell(hookData) {
+
+      const label =
+        hookData.row.raw?.[0];
+
+
+      if (
+        [
+          "CASH INFLOWS",
+          "CASH OUTFLOWS"
+        ].includes(label)
+      ) {
+
+        hookData.cell.styles.fontStyle =
+          "bold";
+
+
+        hookData.cell.styles.textColor = [
+          15,
+          124,
+          95
+        ];
+
+      }
+
+
+      if (
+        [
+          "Total Cash In",
+          "Total Cash Out",
+          "NET CASH FLOW"
+        ].includes(label)
+      ) {
+
+        hookData.cell.styles.fontStyle =
+          "bold";
+
+      }
+
+    },
+
+    margin: {
+      left: margin,
+      right: margin
+    }
+
+  });
+
+
+  y =
+    doc.lastAutoTable.finalY +
+    14;
+
+
+  // ===========================================
+  // ACTIVITY SUMMARY
+  // ===========================================
+
+  if (y > 220) {
+
+    doc.addPage();
+
+    y = 18;
+
+  }
+
+
+  doc.setTextColor(
+    30,
+    30,
+    30
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+
+  doc.setFontSize(14);
+
+
+  doc.text(
+    "Business Activity",
+    margin,
+    y
+  );
+
+
+  y += 5;
+
+
+  doc.autoTable({
+
+    startY: y,
+
+    theme: "grid",
+
+    head: [[
+      "Activity",
+      "Count",
+      "Value"
+    ]],
+
+    body: [
+
+      [
+        "Digital sales",
+        digitalSales.length,
+        formatMoney(
+          digitalRevenue
+        )
+      ],
+
+      [
+        "Cash sales",
+        cashSales.length,
+        formatMoney(
+          cashRevenue
+        )
+      ],
+
+      [
+        "Business expenses",
+        expenses.length,
+        formatMoney(
+          totalExpenses
+        )
+      ]
+
+    ],
+
+    headStyles: {
+
+      fillColor: [
+        15,
+        124,
+        95
+      ],
+
+      textColor: [
+        255,
+        255,
+        255
+      ]
+
+    },
+
+    styles: {
+
+      fontSize: 9,
+
+      cellPadding: 3
+
+    },
+
+    margin: {
+      left: margin,
+      right: margin
+    }
+
+  });
+
+
+  y =
+    doc.lastAutoTable.finalY +
+    13;
+
+
+  // ===========================================
+  // DISCLAIMER
+  // ===========================================
+
+  if (y > 250) {
+
+    doc.addPage();
+
+    y = 18;
+
+  }
+
+
+  doc.setFont(
+    "helvetica",
+    "italic"
+  );
+
+
+  doc.setFontSize(7.5);
+
+
+  doc.setTextColor(
+    110,
+    110,
+    110
+  );
+
+
+  const disclaimer =
+    "This report was automatically generated by Patela Smart Books using transactions, cash sales and business expenses recorded by the merchant. It is intended for business management and informational purposes and does not constitute audited financial statements.";
+
+
+  const disclaimerLines =
+    doc.splitTextToSize(
+      disclaimer,
+      pageWidth -
+      margin * 2
+    );
+
+
+  doc.text(
+    disclaimerLines,
+    margin,
+    y
+  );
+
+
+  // ===========================================
+  // FOOTERS
+  // ===========================================
+
+  const pageCount =
+    doc.internal.getNumberOfPages();
+
+
+  for (
+    let page = 1;
+    page <= pageCount;
+    page++
+  ) {
+
+    doc.setPage(page);
+
+
+    doc.setDrawColor(
+      225,
+      225,
+      225
+    );
+
+
+    doc.line(
+      margin,
+      284,
+      pageWidth - margin,
+      284
+    );
+
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+
+    doc.setFontSize(7);
+
+
+    doc.setTextColor(
+      130,
+      130,
+      130
+    );
+
+
+    doc.text(
+      "Generated by Patela Smart Books",
+      margin,
+      290
+    );
+
+
+    doc.text(
+      `Page ${page} of ${pageCount}`,
+      pageWidth - margin,
+      290,
+      {
+        align: "right"
+      }
+    );
+
+  }
+
+
+  // ===========================================
+  // FILE NAME
+  // ===========================================
+
+  const safeBusinessName =
+    businessName
+      .replace(
+        /[^a-z0-9]/gi,
+        "-"
+      )
+      .replace(
+        /-+/g,
+        "-"
+      )
+      .toLowerCase();
+
+
+  const safeMonth =
+    monthName
+      .replace(
+        /\s+/g,
+        "-"
+      )
+      .toLowerCase();
+
+
+  const fileName =
+    `patela-${safeBusinessName}-${safeMonth}-financial-report.pdf`;
+
+
+  // ===========================================
+  // DOWNLOAD
+  // ===========================================
+
+  doc.save(fileName);
+}
+
+// ===========================================
+// CHART OPTIONS
+// ===========================================
 
 function barOpts(grid) {
+
   return {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: "#6b7280", font: { size: 11 } } },
-      y: { grid: { color: grid }, ticks: { color: "#6b7280", font: { size: 11 } }, beginAtZero: true },
+
+    responsive:
+      true,
+
+    maintainAspectRatio:
+      false,
+
+
+    plugins: {
+
+      legend: {
+        display:
+          false,
+      },
+
     },
+
+
+    scales: {
+
+      x: {
+
+        grid: {
+          display:
+            false,
+        },
+
+        ticks: {
+
+          color:
+            "#6b7280",
+
+          font: {
+            size:
+              11,
+          },
+
+        },
+
+      },
+
+
+      y: {
+
+        grid: {
+          color:
+            grid,
+        },
+
+        ticks: {
+
+          color:
+            "#6b7280",
+
+          font: {
+            size:
+              11,
+          },
+
+        },
+
+        beginAtZero:
+          true,
+
+      },
+
+    },
+
   };
 }
-
 // ============ 4. MAP ============
 function renderMap() {
   screen.innerHTML = `
