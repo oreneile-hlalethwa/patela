@@ -171,6 +171,23 @@ html, body {
 .input:focus { border-color: var(--green); }
 .input.error { border-color: var(--error); }
 
+/* Password field with eye toggle */
+.pw-wrap { position: relative; }
+.pw-wrap .input { padding-right: 42px; }
+.pw-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  opacity: 0.6;
+  padding: 4px;
+  display: flex;
+}
+
 /* Custom scrollable dropdown */
 .dropdown { position: relative; }
 .dd-toggle {

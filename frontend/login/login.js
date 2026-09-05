@@ -131,6 +131,23 @@ function renderSwitchLine() {
 // ---------- Form templates ----------
 function field(name, label, opts = {}) {
   const { type = "text", placeholder = "", hint = "" } = opts;
+
+  if (type === "password") {
+    return `
+    <label class="field">
+      <div class="label-row">
+        <span class="field-label">${label}</span>
+        <span class="hint" data-hint-for="${name}">${hint}</span>
+      </div>
+      <div class="pw-wrap">
+        <input class="input" name="${name}" type="password" placeholder="${placeholder}" autocomplete="off" />
+        <button type="button" class="pw-toggle" data-toggle="${name}" aria-label="Show password">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </label>`;
+  }
+
   return `
     <label class="field">
       <div class="label-row">
@@ -166,11 +183,8 @@ function buyerForm() {
 }
 
 function sellerForm() {
-  const business = state.hasBusiness
-    ? `
-      ${field("businessName", "Business name", { placeholder: "Registered business name" })}
-      ${field("regNumber", "Business registration number", { placeholder: "13-digit registration number", hint: "0/13" })}
-    `
+  const regOnly = state.hasBusiness
+    ? field("regNumber", "Business registration number", { placeholder: "13-digit registration number", hint: "0/13" })
     : "";
 
   const rest = state.hasBusiness === null
@@ -178,7 +192,8 @@ function sellerForm() {
     : `
       ${field("idNumber", "ID number", { placeholder: "13-digit ID number", hint: "0/13" })}
       ${serviceDropdown()}
-      ${business}
+      ${field("businessName", "Business name", { placeholder: "Your business name" })}
+      ${regOnly}
       ${field("email", "Email", { type: "email", placeholder: "you@example.com" })}
       ${field("phone", "Phone number", { placeholder: "10 digits", hint: "0/10" })}
       ${field("password", "Password", { type: "password", placeholder: "••••••••" })}
@@ -283,6 +298,15 @@ function wireForm() {
       if (!dd.contains(e.target)) menu.classList.add("hidden");
     });
   }
+
+  form.querySelectorAll(".pw-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = form.querySelector(`[name="${btn.dataset.toggle}"]`);
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.style.opacity = showing ? "0.6" : "1";
+    });
+  });
 
   const submit = $("submit");
   if (submit) {

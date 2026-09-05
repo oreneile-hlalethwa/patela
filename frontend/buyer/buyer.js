@@ -35,7 +35,7 @@ async function handleSignOut() {
 const GREEN = "#0f7c5f";
 const screen = document.getElementById("screen");
 
-let cards = [{ id: 1, last4: "4417", brand: "Visa" }];
+let cards = [];
 
 const BUYER_LOC = { lat: -25.7479, lng: 28.2293 };
 const SELLERS = [
@@ -126,32 +126,160 @@ function renderCards() {
     </div>`).join("");
 }
 
+let qrScanner = null;
+
+function playPaymentSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1320].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.15;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      osc.start(t);
+      osc.stop(t + 0.25);
+    });
+  } catch (e) { /* silent */ }
+}
+
 function renderScan() {
   screen.innerHTML = `
     <div class="scan-wrap">
       <button class="scan-cancel" id="scanCancel">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M18 6 6 18M6 6l12 12"/></svg> Cancel
       </button>
-      <div class="scan-frame scan-corners"><span></span><div class="scan-line"></div></div>
+      <div class="scan-frame scan-corners">
+        <span></span>
+        <div id="reader" style="width:100%;height:100%;"></div>
+        <div class="scan-line"></div>
+      </div>
       <p class="scan-status" id="scanStatus">Point at the seller's QR code…</p>
     </div>`;
 
-  document.getElementById("scanCancel").addEventListener("click", renderWallet);
+  document.getElementById("scanCancel").addEventListener("click", () => {
+    stopScanner();
+    renderWallet();
+  });
 
-  const status = document.getElementById("scanStatus");
-  setTimeout(() => { status.textContent = "QR detected — reading…"; }, 1400);
-  setTimeout(() => { status.textContent = "Verifying payment…"; }, 2600);
-  setTimeout(() => { renderSuccess("Mama Nomsa Kota", 35); }, 3600);
+  startScanner();
 }
 
-function renderSuccess(sellerName, amt) {
+function startScanner() {
+  if (typeof Html5Qrcode === "undefined") {
+    document.getElementById("scanStatus").textContent = "Scanner not loaded. Refresh the page.";
+    return;
+  }
+  qrScanner = new Html5Qrcode("reader");
+  qrScanner
+    .start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 200, height: 200 } },
+      (decodedText) => {
+        // got a QR — stop scanning and handle it
+        stopScanner();
+        handleScannedCode(decodedText);
+      },
+      () => { /* ignore per-frame scan errors */ }
+    )
+    .catch((err) => {
+      document.getElementById("scanStatus").textContent = "Cannot open camera. Allow camera access.";
+      console.error(err);
+    });
+}
+
+function stopScanner() {
+  if (qrScanner) {
+    qrScanner.stop().then(() => qrScanner.clear()).catch(() => {});
+    qrScanner = null;
+  }
+}
+
+async function handleScannedCode(code) {
+  const status = document.getElementById("scanStatus");
+  if (status) status.textContent = "Reading payment…";
+
+  // The QR holds a transaction id
+  const txId = parseInt(code, 10);
+  if (isNaN(txId)) {
+    alert("That QR code isn't a valid Patela payment.");
+    renderWallet();
+    return;
+  }
+
+  const { data: tx, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", txId)
+    .single();
+
+  if (error || !tx) {
+    alert("Payment not found. Ask the seller to show the QR again.");
+    renderWallet();
+    return;
+  }
+
+  if (tx.status === "paid") {
+    alert("This payment was already completed.");
+    renderWallet();
+    return;
+  }
+
+  playPaymentSound();
+  renderConfirm(tx);
+}
+
+function renderConfirm(tx) {
+  screen.innerHTML = `
+    <div class="success-wrap">
+      <div class="success-to" style="margin-bottom:6px">Paying</div>
+      <div class="seller-name" style="font-size:22px;font-weight:800">${tx.seller_name || "Seller"}</div>
+      <div class="success-amount" style="margin-top:18px">R ${parseFloat(tx.amount).toFixed(2)}</div>
+      <div style="display:flex;gap:12px;margin-top:30px;width:100%;max-width:300px">
+        <button class="btn-directions" id="cancelPay" style="flex:1;padding:14px;border-radius:12px;border:1px solid #ededf0;background:#f6f6f7;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>
+        <button class="scan-btn" id="confirmPay" style="flex:1">Confirm</button>
+      </div>
+    </div>`;
+
+  document.getElementById("cancelPay").addEventListener("click", renderWallet);
+  document.getElementById("confirmPay").addEventListener("click", () => payNow(tx));
+}
+
+async function payNow(tx) {
+  const btn = document.getElementById("confirmPay");
+  btn.disabled = true;
+  btn.textContent = "Paying…";
+
+  const buyerName = currentUser?.user_metadata?.name || "Buyer";
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({ status: "paid", buyer_name: buyerName, buyer_id: currentUser.id })
+    .eq("id", tx.id);
+
+  if (error) {
+    alert("Payment failed. Try again.");
+    console.error(error);
+    renderWallet();
+    return;
+  }
+
+  renderApproved(tx);
+}
+
+function renderApproved(tx) {
   screen.innerHTML = `
     <div class="success-wrap">
       <div class="success-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="40" height="40"><path d="M20 6 9 17l-5-5"/></svg>
       </div>
-      <div class="success-amount">R ${amt.toFixed(2)}</div>
-      <div class="success-to">Paid to ${sellerName}</div>
+      <div class="success-amount">R ${parseFloat(tx.amount).toFixed(2)}</div>
+      <div class="success-to">Payment approved · ${tx.seller_name || "Seller"}</div>
       <button class="scan-btn" id="doneBtn" style="max-width:260px">Done</button>
     </div>`;
   document.getElementById("doneBtn").addEventListener("click", renderWallet);
@@ -184,7 +312,7 @@ function openAddCard() {
   });
   saveBtn.addEventListener("click", () => {
     const last4 = numEl.value.replace(/\s/g, "").slice(-4);
-    cards.push({ id: Date.now(), last4, brand: "Card" });
+    cards.push({ id: Date.now(), last4, brand: "Visa" });
     div.remove();
     renderCards();
   });
@@ -193,29 +321,53 @@ function openAddCard() {
 }
 
 // ============ 2. ACTIVITY ============
-function renderActivity() {
-  const total = PURCHASES.reduce((a, p) => a + p.amount, 0);
+async function renderActivity() {
   screen.innerHTML = `
     <div class="pad">
       <h1 class="h1">Activity</h1>
-      <div class="summary-card">
-        <div>
-          <div class="summary-label">Spent recently</div>
-          <div class="summary-value">R ${total.toFixed(2)}</div>
-        </div>
-        <div class="summary-count">${PURCHASES.length} purchases</div>
+      <div id="activityBody"><p style="color:#868b92">Loading…</p></div>
+    </div>`;
+
+  const { data: purchases, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("buyer_id", currentUser.id)
+    .eq("status", "paid")
+    .order("created_at", { ascending: false });
+
+  const body = document.getElementById("activityBody");
+
+  if (error) {
+    body.innerHTML = `<p style="color:#868b92">Couldn't load activity.</p>`;
+    console.error(error);
+    return;
+  }
+
+  const list = purchases || [];
+  const total = list.reduce((a, p) => a + Number(p.amount), 0);
+
+  body.innerHTML = `
+    <div class="summary-card">
+      <div>
+        <div class="summary-label">Spent recently</div>
+        <div class="summary-value">R ${total.toFixed(2)}</div>
       </div>
-      <div class="tx-list">
-        ${PURCHASES.map((p) => `
+      <div class="summary-count">${list.length} purchases</div>
+    </div>
+    <div class="tx-list">
+      ${list.length === 0 ? `<p style="color:#868b92">No purchases yet.</p>` : list.map((p) => {
+        const seller = p.seller_name || "Seller";
+        const time = new Date(p.created_at).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        return `
           <div class="tx">
-            <div class="tx-avatar">${p.seller[0]}</div>
+            <div class="tx-avatar">${seller[0]}</div>
             <div style="flex:1">
-              <div class="tx-name">${p.seller}</div>
-              <div class="tx-time">${p.where} · ${p.time}</div>
+              <div class="tx-name">${seller}</div>
+              <div class="tx-time">${time}</div>
             </div>
-            <div class="tx-amount">-R ${p.amount.toFixed(2)}</div>
-          </div>`).join("")}
-      </div>
+            <div class="tx-amount">-R ${Number(p.amount).toFixed(2)}</div>
+          </div>`;
+      }).join("")}
     </div>`;
 }
 

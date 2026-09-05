@@ -44,7 +44,7 @@ const CUSTOMER_POINTS = [
   { lat: -25.7465, lng: 28.2300, weight: 3 },
 ];
 
-let cards = [{ id: 1, last4: "4417", brand: "Visa" }];
+let cards = [];
 
 const TODAY_PAYMENTS = [
   { id: 1, name: "Thabo M.", amount: 45, time: "14:22" },
@@ -151,7 +151,15 @@ function renderCards() {
     </div>`).join("");
 }
 
-function renderReceive() {
+let paymentChannel = null;
+
+async function renderReceive() {
+  // Seller's display name: business name if present, else personal name
+  const sellerName =
+    currentUser?.user_metadata?.business_name ||
+    currentUser?.user_metadata?.name ||
+    "Seller";
+
   screen.innerHTML = `
     <div class="receive-wrap">
       <button class="back-top" id="backBtn">
@@ -160,13 +168,74 @@ function renderReceive() {
       <div class="receive-amount">R ${parseFloat(amount).toFixed(2)}</div>
       <p class="receive-label">Show this to the buyer</p>
       <div class="qr-big"><div id="qrBig"></div></div>
-      <div class="waiting"><span class="dot"></span> Waiting for payment…</div>
+      <div class="waiting" id="waitBox"><span class="dot"></span> Waiting for payment…</div>
     </div>`;
-  makeQR("qrBig", `${ACCOUNT_CODE}|${amount}`, 260);
+
   document.getElementById("backBtn").addEventListener("click", () => {
+    cleanupPayment();
     amount = "";
     renderWallet();
   });
+
+  // 1. Create a pending transaction in Supabase
+  const { data: tx, error } = await supabase
+    .from("transactions")
+    .insert({
+      seller_id: currentUser.id,
+      seller_code: ACCOUNT_CODE,
+      seller_name: sellerName,
+      amount: parseFloat(amount),
+      status: "pending",
+    })
+    .select()
+    .single();
+
+  if (error || !tx) {
+    document.getElementById("waitBox").innerHTML = "Could not start payment. Try again.";
+    console.error(error);
+    return;
+  }
+
+  // 2. QR now encodes the transaction id (buyer scans this)
+  makeQR("qrBig", String(tx.id), 260);
+
+  // 3. Listen live — when buyer marks it paid, show the tick
+  paymentChannel = supabase
+    .channel("tx-" + tx.id)
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "transactions", filter: `id=eq.${tx.id}` },
+      (payload) => {
+        if (payload.new.status === "paid") {
+          showSellerPaid(payload.new);
+        }
+      }
+    )
+    .subscribe();
+}
+
+function showSellerPaid(tx) {
+  cleanupPayment();
+  screen.innerHTML = `
+    <div class="success-wrap">
+      <div class="success-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="40" height="40"><path d="M20 6 9 17l-5-5"/></svg>
+      </div>
+      <div class="success-amount">+R ${parseFloat(tx.amount).toFixed(2)}</div>
+      <div class="success-to">Paid by ${tx.buyer_name || "buyer"}</div>
+      <button class="scan-btn" id="doneBtn" style="max-width:260px">Done</button>
+    </div>`;
+  document.getElementById("doneBtn").addEventListener("click", () => {
+    amount = "";
+    renderWallet();
+  });
+}
+
+function cleanupPayment() {
+  if (paymentChannel) {
+    supabase.removeChannel(paymentChannel);
+    paymentChannel = null;
+  }
 }
 
 function openAddCard() {
@@ -196,7 +265,7 @@ function openAddCard() {
   });
   saveBtn.addEventListener("click", () => {
     const last4 = numEl.value.replace(/\s/g, "").slice(-4);
-    cards.push({ id: Date.now(), last4, brand: "Card" });
+    cards.push({ id: Date.now(), last4, brand: "Visa" });
     div.remove();
     renderCards();
   });
@@ -205,31 +274,56 @@ function openAddCard() {
 }
 
 // ============ 2. ACTIVITY ============
-function renderActivity() {
-  const total = TODAY_PAYMENTS.reduce((a, p) => a + p.amount, 0);
+async function renderActivity() {
   const today = new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" });
+
   screen.innerHTML = `
     <div class="pad">
       <h1 class="h1">Activity</h1>
-      <div class="summary-card">
-        <div>
-          <div class="summary-label">Today's total</div>
-          <div class="summary-value">R ${total.toFixed(2)}</div>
-        </div>
-        <div class="summary-count">${TODAY_PAYMENTS.length} payments</div>
+      <div id="activityBody"><p style="color:#868b92">Loading…</p></div>
+    </div>`;
+
+  const { data: payments, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("seller_id", currentUser.id)
+    .eq("status", "paid")
+    .order("created_at", { ascending: false });
+
+  const body = document.getElementById("activityBody");
+
+  if (error) {
+    body.innerHTML = `<p style="color:#868b92">Couldn't load activity.</p>`;
+    console.error(error);
+    return;
+  }
+
+  const list = payments || [];
+  const total = list.reduce((a, p) => a + Number(p.amount), 0);
+
+  body.innerHTML = `
+    <div class="summary-card">
+      <div>
+        <div class="summary-label">Total received</div>
+        <div class="summary-value">R ${total.toFixed(2)}</div>
       </div>
-      <div class="date-label">${today}</div>
-      <div class="tx-list">
-        ${TODAY_PAYMENTS.map((p) => `
+      <div class="summary-count">${list.length} payments</div>
+    </div>
+    <div class="date-label">${today}</div>
+    <div class="tx-list">
+      ${list.length === 0 ? `<p style="color:#868b92">No payments yet.</p>` : list.map((p) => {
+        const name = p.buyer_name || "Buyer";
+        const time = new Date(p.created_at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+        return `
           <div class="tx">
-            <div class="tx-avatar">${p.name[0]}</div>
+            <div class="tx-avatar">${name[0]}</div>
             <div style="flex:1">
-              <div class="tx-name">${p.name}</div>
-              <div class="tx-time">${p.time}</div>
+              <div class="tx-name">${name}</div>
+              <div class="tx-time">${time}</div>
             </div>
-            <div class="tx-amount">+R ${p.amount.toFixed(2)}</div>
-          </div>`).join("")}
-      </div>
+            <div class="tx-amount">+R ${Number(p.amount).toFixed(2)}</div>
+          </div>`;
+      }).join("")}
     </div>`;
 }
 
