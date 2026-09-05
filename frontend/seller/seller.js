@@ -133,7 +133,7 @@ function renderWallet() {
     <div class="pad">
       <div class="header-row">
         <div>
-          <h1 class="h1">Wallet</h1>
+          <h1 class="h1">Terminal</h1>
           <p style="font-size:13px; color:var(--muted); margin:0;">${sellerTitle}</p>
         </div>
         <button class="plus-btn" id="addCardBtn" title="Add Card">

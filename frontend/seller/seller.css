@@ -86,7 +86,7 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-/* Balance / Wallet Card inside Sidebar */
+/* Balance / Terminal Card inside Sidebar */
 .sidebar-wallet-card {
   background: linear-gradient(135deg, #10a37f, #0d8a6c);
   border-radius: 16px;
@@ -955,12 +955,13 @@ h1.h1 {
 .map-title { font-size: 15px; font-weight: 700; color: var(--ink); }
 .map-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
+/* Floating chat button cleared above bottom navigation */
 .chat-fab {
   position: absolute;
-  bottom: 24px;
-  right: 24px;
-  width: 56px;
-  height: 56px;
+  bottom: 84px; /* Clears the 62px mobile bottom nav */
+  right: 20px;
+  width: 54px;
+  height: 54px;
   border-radius: 16px;
   background: var(--green);
   border: none;
@@ -969,11 +970,14 @@ h1.h1 {
   align-items: center;
   justify-content: center;
   box-shadow: 0 8px 24px rgba(16, 163, 127, 0.35);
-  z-index: 10;
-  transition: transform 0.15s;
+  z-index: 25;
+  transition: transform 0.15s ease, background 0.15s ease;
 }
 
-.chat-fab:hover { transform: scale(1.05); }
+.chat-fab:hover {
+  transform: scale(1.05);
+  background: var(--green-dark);
+}
 
 .chat-badge {
   position: absolute;
@@ -1285,6 +1289,12 @@ h1.h1 {
     height: calc(100vh - 100px);
     border: 1px solid var(--border);
     overflow: hidden;
+  }
+
+  /* Reset chat button on desktop inside map container */
+  .chat-fab {
+    bottom: 28px;
+    right: 28px;
   }
 
   .overlay { align-items: center; }
