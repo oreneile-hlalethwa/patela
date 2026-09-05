@@ -48,27 +48,41 @@ const screens = { loading: $("loading"), roles: $("roles"), auth: $("auth") };
 
 function show(name) {
   Object.values(screens).forEach((s) => s.classList.add("hidden"));
-  screens[name].classList.remove("hidden");
+  if (screens[name]) {
+    screens[name].classList.remove("hidden");
+  }
 }
 
-// Check session on startup
-async function init() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const role = session.user.user_metadata?.role;
+// Guaranteed transition: never gets stuck on the loading bar
+function init() {
+  let done = false;
+
+  const proceed = () => {
+    if (!done) {
+      done = true;
+      show("roles");
+    }
+  };
+
+  // Timeout matches the 1.8s loading animation
+  const animTimer = setTimeout(proceed, 1800);
+
+  // Check existing session in background
+  supabase.auth.getSession().then(({ data }) => {
+    if (data?.session) {
+      clearTimeout(animTimer);
+      done = true;
+      const role = data.session.user?.user_metadata?.role;
       if (role === "seller") {
         window.location.href = "../seller/seller.html";
-        return;
-      } else if (role === "buyer") {
+      } else {
         window.location.href = "../buyer/buyer.html";
-        return;
       }
     }
-  } catch (err) {
-    console.error("Auth initialization error:", err);
-  }
-  setTimeout(() => show("roles"), 2200);
+  }).catch((err) => {
+    console.warn("Session check error:", err);
+    proceed();
+  });
 }
 
 init();
@@ -314,7 +328,6 @@ function wireForm() {
   }
 }
 
-// Helper to isolate account identities per role in Supabase Auth
 function formatRoleEmail(email, role) {
   const [local, domain] = email.split("@");
   return `${local}+${role}@${domain}`;

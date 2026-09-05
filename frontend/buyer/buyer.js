@@ -10,7 +10,6 @@ async function checkSession() {
     return;
   }
 
-  // Strict enforcement: Ensure logged-in user is a buyer
   const role = session.user.user_metadata?.role;
   if (role !== "buyer") {
     alert("Access restricted: You must log in with a Buyer account.");
@@ -19,19 +18,18 @@ async function checkSession() {
   }
 
   currentUser = session.user;
-
-  // Hook up topbar sign-out button
   document.getElementById("logoutBtn")?.addEventListener("click", handleSignOut);
 
   render("wallet");
 }
 
 async function handleSignOut() {
+  stopScanner();
   await supabase.auth.signOut();
   window.location.href = "../login/login.html";
 }
 
-// ============ Config & mock data ============
+// ============ Config & Mock Data ============
 const GREEN = "#0f7c5f";
 const screen = document.getElementById("screen");
 
@@ -44,15 +42,6 @@ const SELLERS = [
   { id: 3, name: "Sipho Cuts", lat: -25.7470, lng: 28.2325, service: "Barber", rating: 4.5, dist: "610 m", sells: ["Haircut", "Fade", "Beard trim", "Line-up"] },
   { id: 4, name: "Lerato Salon", lat: -25.7455, lng: 28.2255, service: "Salon & Hair", rating: 4.8, dist: "300 m", sells: ["Braids", "Weave", "Nails", "Wash & blow"] },
   { id: 5, name: "Kagiso Car Wash", lat: -25.7500, lng: 28.2280, service: "Car Wash", rating: 4.3, dist: "540 m", sells: ["Full wash", "Wax", "Interior valet"] },
-];
-
-const PURCHASES = [
-  { id: 1, seller: "Thabo's Spaza", where: "Block C, Soshanguve", amount: 45, time: "14:22", cat: "Spaza" },
-  { id: 2, seller: "Mama Nomsa Kota", where: "Main Rd", amount: 35, time: "13:05", cat: "Food" },
-  { id: 3, seller: "Sipho Cuts", where: "Ext 4", amount: 60, time: "Yesterday", cat: "Grooming" },
-  { id: 4, seller: "Lerato Salon", where: "Block H", amount: 150, time: "Yesterday", cat: "Grooming" },
-  { id: 5, seller: "Thabo's Spaza", where: "Block C, Soshanguve", amount: 22, time: "2 days ago", cat: "Spaza" },
-  { id: 6, seller: "Kagiso Car Wash", where: "Station St", amount: 80, time: "3 days ago", cat: "Services" },
 ];
 
 const SPEND_WEEK = [
@@ -194,11 +183,10 @@ function startScanner() {
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 200, height: 200 } },
       (decodedText) => {
-        // got a QR — stop scanning and handle it
         stopScanner();
-        handleScannedCode(decodedText);
+        handleScannedCode(decodedText.trim());
       },
-      () => { /* ignore per-frame scan errors */ }
+      () => { /* frame scan listener */ }
     )
     .catch((err) => {
       document.getElementById("scanStatus").textContent = "Cannot open camera. Allow camera access.";
@@ -217,10 +205,10 @@ async function handleScannedCode(code) {
   const status = document.getElementById("scanStatus");
   if (status) status.textContent = "Reading payment…";
 
-  // The QR holds a transaction id
-  const txId = parseInt(code, 10);
-  if (isNaN(txId)) {
-    alert("That QR code isn't a valid Patela payment.");
+  // Validate transaction UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(code)) {
+    alert("That QR code isn't a valid Patela payment transaction.");
     renderWallet();
     return;
   }
@@ -228,7 +216,7 @@ async function handleScannedCode(code) {
   const { data: tx, error } = await supabase
     .from("transactions")
     .select("*")
-    .eq("id", txId)
+    .eq("id", code)
     .single();
 
   if (error || !tx) {
@@ -270,6 +258,7 @@ async function payNow(tx) {
 
   const buyerName = currentUser?.user_metadata?.name || "Buyer";
 
+  // Atomically mark the transaction as paid with buyer credentials
   const { error } = await supabase
     .from("transactions")
     .update({ status: "paid", buyer_name: buyerName, buyer_id: currentUser.id })
