@@ -1,10 +1,42 @@
+import { supabase } from "../shared/supabaseClient.js";
+
+// ============ Auth Guard (Option 1: Strict Role Separation) ============
+let currentUser = null;
+
+async function checkSession() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    window.location.href = "../login/login.html";
+    return;
+  }
+
+  // Strict enforcement: Ensure logged-in user is a buyer
+  const role = session.user.user_metadata?.role;
+  if (role !== "buyer") {
+    alert("Access restricted: You must log in with a Buyer account.");
+    window.location.href = "../seller/seller.html";
+    return;
+  }
+
+  currentUser = session.user;
+
+  // Hook up topbar sign-out button
+  document.getElementById("logoutBtn")?.addEventListener("click", handleSignOut);
+
+  render("wallet");
+}
+
+async function handleSignOut() {
+  await supabase.auth.signOut();
+  window.location.href = "../login/login.html";
+}
+
 // ============ Config & mock data ============
 const GREEN = "#0f7c5f";
 const screen = document.getElementById("screen");
 
 let cards = [{ id: 1, last4: "4417", brand: "Visa" }];
 
-// Buyer's own location + nearby sellers
 const BUYER_LOC = { lat: -25.7479, lng: 28.2293 };
 const SELLERS = [
   { id: 1, name: "Thabo's Spaza", lat: -25.7460, lng: 28.2270, service: "Spaza Shop", rating: 4.7, dist: "220 m", sells: ["Bread", "Milk", "Airtime", "Cold drinks", "Snacks"] },
@@ -40,7 +72,7 @@ const FAV_SELLERS = [
   { name: "Lerato Salon", visits: 3 },
 ];
 
-let CHAT = {}; // per-seller message threads
+let CHAT = {};
 
 // ============ Nav ============
 document.querySelectorAll(".nav-btn").forEach((btn) => {
@@ -60,10 +92,14 @@ function render(tab) {
 
 // ============ 1. WALLET + SCAN ============
 function renderWallet() {
+  const buyerName = currentUser?.user_metadata?.name || "Buyer";
   screen.innerHTML = `
     <div class="pad">
       <div class="header-row">
-        <h1 class="h1">Wallet</h1>
+        <div>
+          <h1 class="h1">Wallet</h1>
+          <p style="font-size:12px; color:#868b92; margin:0;">Hi, ${buyerName}</p>
+        </div>
         <button class="plus-btn" id="addCardBtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 5v14M5 12h14"/></svg>
         </button>
@@ -102,7 +138,6 @@ function renderScan() {
 
   document.getElementById("scanCancel").addEventListener("click", renderWallet);
 
-  // simulate detecting + scanning a QR
   const status = document.getElementById("scanStatus");
   setTimeout(() => { status.textContent = "QR detected — reading…"; }, 1400);
   setTimeout(() => { status.textContent = "Verifying payment…"; }, 2600);
@@ -264,13 +299,11 @@ function initGoogleMap() {
     disableDefaultUI: true, gestureHandling: "greedy",
   });
 
-  // buyer location (blue dot)
   new google.maps.Marker({
     position: BUYER_LOC, map, title: "You",
     icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#2563eb", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 3 },
   });
 
-  // Stall icon (green pin with a shop/stall glyph)
   const stallIcon = {
     url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="44" height="54" viewBox="0 0 44 54">
@@ -288,7 +321,6 @@ function initGoogleMap() {
     anchor: new google.maps.Point(22, 52),
   };
 
-  // clickable seller stalls
   SELLERS.forEach((s) => {
     const marker = new google.maps.Marker({
       position: { lat: s.lat, lng: s.lng }, map, title: s.name, icon: stallIcon,
@@ -355,7 +387,6 @@ function openChat(seller) {
     CHAT[seller.id].push({ id: Date.now(), from: "me", text: t, time: "now" });
     input.value = "";
     paint();
-    // mock seller auto-reply
     setTimeout(() => {
       CHAT[seller.id].push({ from: "them", text: "Yes, we have that in stock 👍", time: "now" });
       paint();
@@ -367,5 +398,5 @@ function openChat(seller) {
   div.addEventListener("click", (e) => { if (e.target === div) div.remove(); });
 }
 
-// ============ Start ============
-render("wallet");
+// Start session check
+checkSession();

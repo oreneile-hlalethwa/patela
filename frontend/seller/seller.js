@@ -1,7 +1,39 @@
-// ============ Config & mock data ============
-const ACCOUNT_CODE = "PTL-4827-9931";
+import { supabase } from "../shared/supabaseClient.js";
 
-const SELLER_LOC = { lat: -25.7479, lng: 28.2293 }; // change to real coords
+// ============ Auth Guard ============
+let currentUser = null;
+let ACCOUNT_CODE = "PTL-4827-9931";
+
+async function checkSession() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    window.location.href = "../login/login.html";
+    return;
+  }
+
+  // Strict enforcement: Ensure logged-in user is a seller
+  const role = session.user.user_metadata?.role;
+  if (role !== "seller") {
+    alert("Access restricted: You must log in with a Seller account.");
+    window.location.href = "../buyer/buyer.html";
+    return;
+  }
+
+  currentUser = session.user;
+  ACCOUNT_CODE = `PTL-${currentUser.id.substring(0, 4).toUpperCase()}-${currentUser.id.substring(currentUser.id.length - 4).toUpperCase()}`;
+
+  document.getElementById("logoutBtn")?.addEventListener("click", handleSignOut);
+
+  render("wallet");
+}
+
+async function handleSignOut() {
+  await supabase.auth.signOut();
+  window.location.href = "../login/login.html";
+}
+
+// ============ Config & mock data ============
+const SELLER_LOC = { lat: -25.7479, lng: 28.2293 };
 const CUSTOMER_POINTS = [
   { lat: -25.7460, lng: 28.2270, weight: 5 },
   { lat: -25.7495, lng: 28.2310, weight: 4 },
@@ -67,10 +99,14 @@ function render(tab) {
 let amount = "";
 
 function renderWallet() {
+  const sellerTitle = currentUser?.user_metadata?.business_name || currentUser?.user_metadata?.name || "Seller";
   screen.innerHTML = `
     <div class="pad">
       <div class="header-row">
-        <h1 class="h1">Wallet</h1>
+        <div>
+          <h1 class="h1">Wallet</h1>
+          <p style="font-size:12px; color:#868b92; margin:0;">${sellerTitle}</p>
+        </div>
         <button class="plus-btn" id="addCardBtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 5v14M5 12h14"/></svg>
         </button>
@@ -292,12 +328,11 @@ function initGoogleMap() {
     gestureHandling: "greedy",
   });
 
-  // Guaranteed-visible hotspot circles (core Maps, always render)
   CUSTOMER_POINTS.forEach((p) => {
     new google.maps.Circle({
       map,
       center: { lat: p.lat, lng: p.lng },
-      radius: 30 + p.weight * 12,          // metres, scaled by weight
+      radius: 30 + p.weight * 12,
       strokeColor: "#ff3b00",
       strokeOpacity: 0.6,
       strokeWeight: 1,
@@ -306,7 +341,6 @@ function initGoogleMap() {
     });
   });
 
-  // Heatmap layer (adds the soft glow when the visualization lib is available)
   if (google.maps.visualization && google.maps.visualization.HeatmapLayer) {
     new google.maps.visualization.HeatmapLayer({
       data: CUSTOMER_POINTS.map((p) => ({ location: new google.maps.LatLng(p.lat, p.lng), weight: p.weight })),
@@ -376,5 +410,5 @@ function makeQR(hostId, value, size) {
   new QRCode(host, { text: value, width: size, height: size, colorDark: "#0a0a0a", colorLight: "#ffffff" });
 }
 
-// ============ Start ============
-render("wallet");
+// Start session check
+checkSession();

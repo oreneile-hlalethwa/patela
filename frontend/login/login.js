@@ -1,3 +1,5 @@
+import { supabase } from "../shared/supabaseClient.js";
+
 // ---------- Config ----------
 const SERVICES = [
   "Spaza Shop",
@@ -35,8 +37,8 @@ const SERVICES = [
 
 // ---------- State ----------
 let state = {
-  role: null,      // 'seller' | 'buyer'
-  mode: "signin",  // 'signin' | 'signup'
+  role: null,       // 'seller' | 'buyer'
+  mode: "signin",   // 'signin' | 'signup'
   hasBusiness: null,
 };
 
@@ -49,14 +51,33 @@ function show(name) {
   screens[name].classList.remove("hidden");
 }
 
-// ---------- Loading -> Roles ----------
-setTimeout(() => show("roles"), 2200);
+// Check session on startup
+async function init() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const role = session.user.user_metadata?.role;
+      if (role === "seller") {
+        window.location.href = "../seller/seller.html";
+        return;
+      } else if (role === "buyer") {
+        window.location.href = "../buyer/buyer.html";
+        return;
+      }
+    }
+  } catch (err) {
+    console.error("Auth initialization error:", err);
+  }
+  setTimeout(() => show("roles"), 2200);
+}
+
+init();
 
 // ---------- Role selection ----------
 document.querySelectorAll(".block").forEach((btn) => {
   btn.addEventListener("click", () => {
     state.role = btn.dataset.role;
-    state.mode = "signin";        // auto-start at sign in
+    state.mode = "signin";
     state.hasBusiness = null;
     openAuth();
   });
@@ -91,7 +112,6 @@ function renderForm() {
   renderSwitchLine();
   wireForm();
 
-  // seller sign-up starts with the business banner
   if (state.mode === "signup" && state.role === "seller" && state.hasBusiness === null) {
     $("banner").classList.remove("hidden");
   }
@@ -176,7 +196,6 @@ function sellerForm() {
     </div>`;
 }
 
-// Custom scrollable dropdown (contained, not the OS picker)
 function serviceDropdown() {
   return `
     <div class="field">
@@ -217,7 +236,6 @@ function wireForm() {
     if (input) input.classList.toggle("error", !!error);
   };
 
-  // digit limits + live counters
   const limits = { phone: 10, idNumber: 13, regNumber: 13 };
   Object.keys(limits).forEach((name) => {
     const input = form.querySelector(`[name="${name}"]`);
@@ -228,7 +246,6 @@ function wireForm() {
     });
   });
 
-  // confirm password match
   const pw = form.querySelector('[name="password"]');
   const cf = form.querySelector('[name="confirm"]');
   if (pw && cf) {
@@ -240,7 +257,6 @@ function wireForm() {
     cf.addEventListener("input", check);
   }
 
-  // custom service dropdown
   const dd = form.querySelector("#serviceDropdown");
   if (dd) {
     const toggle = dd.querySelector("#ddToggle");
@@ -263,38 +279,108 @@ function wireForm() {
       });
     });
 
-    // close when clicking outside
     document.addEventListener("click", (e) => {
       if (!dd.contains(e.target)) menu.classList.add("hidden");
     });
   }
 
-  // submit
   const submit = $("submit");
   if (submit) {
     submit.addEventListener("click", () => handleSubmit(form));
   }
 }
 
-function handleSubmit(form) {
+// Helper to isolate account identities per role in Supabase Auth
+function formatRoleEmail(email, role) {
+  const [local, domain] = email.split("@");
+  return `${local}+${role}@${domain}`;
+}
+
+// ---------- Supabase Auth Logic ----------
+async function handleSubmit(form) {
+  const submitBtn = $("submit");
   const data = {};
   form.querySelectorAll("input, select").forEach((el) => {
-    if (el.name) data[el.name] = el.value;
+    if (el.name) data[el.name] = el.value.trim();
   });
+
   data.role = state.role;
   data.mode = state.mode;
   if (state.role === "seller" && state.mode === "signup") {
     data.hasBusiness = state.hasBusiness;
   }
 
-  // basic checks
   if (data.confirm !== undefined && data.password !== data.confirm) {
     alert("Passwords don't match.");
     return;
   }
 
-  // TODO: POST to Django endpoint, e.g.
-  // fetch('/api/auth/', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
-  console.log("Submit payload:", data);
-  alert(`${state.mode === "signin" ? "Signing in" : "Account created"} — ${state.role}`);
+  if (!data.email || !data.password) {
+    alert("Please fill in both email and password.");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = state.mode === "signin" ? "Signing in..." : "Creating account...";
+
+  const authEmail = formatRoleEmail(data.email, state.role);
+
+  try {
+    if (state.mode === "signin") {
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email: authEmail,
+        password: data.password,
+      });
+
+      if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+          throw new Error(`No ${state.role} account found for this email. Please sign up as a ${state.role} first.`);
+        }
+        throw error;
+      }
+
+      window.location.href = state.role === "seller" ? "../seller/seller.html" : "../buyer/buyer.html";
+    } else {
+      const { data: authData, error } = await supabase.auth.signUp({
+        email: authEmail,
+        password: data.password,
+        options: {
+          data: {
+            role: data.role,
+            original_email: data.email,
+            name: data.name,
+            surname: data.surname,
+            phone: data.phone,
+            ...(data.role === "seller" && {
+              id_number: data.idNumber,
+              service: data.service,
+              has_business: data.hasBusiness,
+              business_name: data.businessName || null,
+              reg_number: data.regNumber || null,
+            }),
+          },
+        },
+      });
+
+      if (error) {
+        if (error.message.includes("User already registered")) {
+          throw new Error(`You already have a ${state.role} account with this email. Please sign in instead.`);
+        }
+        throw error;
+      }
+
+      if (authData.session) {
+        window.location.href = state.role === "seller" ? "../seller/seller.html" : "../buyer/buyer.html";
+      } else {
+        alert(`${state.role === "seller" ? "Seller" : "Buyer"} account registered! Please sign in.`);
+        state.mode = "signin";
+        renderForm();
+      }
+    }
+  } catch (err) {
+    alert(err.message || "An authentication error occurred.");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = state.mode === "signin" ? "Sign in" : "Create account";
+  }
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Patela</title>
+  <title>Patela - Seller</title>
   <link rel="stylesheet" href="seller.css" />
 </head>
 <body>
@@ -11,7 +11,14 @@
     <!-- Top bar -->
     <header class="topbar">
       <span class="brand">Patela</span>
-      <span class="role-chip">Buyer</span>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span class="role-chip">Seller</span>
+        <button id="logoutBtn" title="Sign out" style="background: none; border: none; cursor: pointer; color: #e5484d; display: inline-flex; align-items: center; padding: 4px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
     <!-- Screen host -->
@@ -43,7 +50,6 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <!-- Google Maps (satellite + heatmap). Replace KEY or restrict it in Cloud Console. -->
   <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY_HERE&libraries=visualization"></script>
-
-  <script src="seller.js"></script>
+  <script type="module" src="seller.js"></script>
 </body>
 </html>
