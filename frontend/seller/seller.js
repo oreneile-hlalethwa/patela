@@ -6,6 +6,9 @@ let ACCOUNT_CODE = "PTL-4827-9931";
 let cards = [];
 let paymentChannel = null;
 
+const GREEN = "#0f7c5f";
+const screen = document.getElementById("screen");
+
 async function checkSession() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
@@ -23,8 +26,38 @@ async function checkSession() {
   currentUser = session.user;
   ACCOUNT_CODE = `PTL-${currentUser.id.substring(0, 4).toUpperCase()}-${currentUser.id.substring(currentUser.id.length - 4).toUpperCase()}`;
 
-  document.getElementById("logoutBtn")?.addEventListener("click", handleSignOut);
+  // Resolve Business Name or Initials + Surname
+  const meta = currentUser.user_metadata || {};
+  let displayName = meta.business_name;
 
+  if (!displayName) {
+    const firstName = meta.name ? meta.name.trim() : "";
+    const surname = meta.surname ? meta.surname.trim() : "";
+    if (firstName && surname) {
+      displayName = `${firstName[0].toUpperCase()}. ${surname}`;
+    } else if (firstName) {
+      displayName = firstName;
+    } else {
+      displayName = "Merchant";
+    }
+  }
+
+  // Hydrate desktop sidebar info
+  const nameEl = document.getElementById("sidebarUserName");
+  const avatarEl = document.getElementById("sidebarAvatar");
+  const codeEl = document.getElementById("sidebarAccountCode");
+  const pillEl = document.getElementById("sidebarPill");
+
+  if (nameEl) nameEl.textContent = displayName;
+  if (avatarEl) avatarEl.textContent = displayName[0].toUpperCase();
+  if (codeEl) codeEl.textContent = ACCOUNT_CODE;
+  if (pillEl) pillEl.textContent = displayName;
+
+  // Bind sign out handlers to both sidebar and mobile headers
+  document.getElementById("logoutBtn")?.addEventListener("click", handleSignOut);
+  document.getElementById("mobileLogoutBtn")?.addEventListener("click", handleSignOut);
+
+  setupNavigation();
   render("wallet");
 }
 
@@ -63,37 +96,24 @@ const CUSTOMER_POINTS = [
   { lat: -25.7465, lng: 28.2300, weight: 3 },
 ];
 
-const HOURLY = [
-  { hour: "6a", sales: 2 }, { hour: "8a", sales: 8 }, { hour: "10a", sales: 14 },
-  { hour: "12p", sales: 22 }, { hour: "2p", sales: 18 }, { hour: "4p", sales: 12 },
-  { hour: "6p", sales: 20 }, { hour: "8p", sales: 9 },
-];
-const WEEKLY = [
-  { day: "Mon", total: 420 }, { day: "Tue", total: 380 }, { day: "Wed", total: 510 },
-  { day: "Thu", total: 460 }, { day: "Fri", total: 720 }, { day: "Sat", total: 890 },
-  { day: "Sun", total: 340 },
-];
-const TOP_CUSTOMERS = [
-  { name: "Ayanda Z.", spent: 200 }, { name: "Nomsa K.", spent: 120 },
-  { name: "Lerato P.", spent: 85 }, { name: "Bongani S.", spent: 60 },
-];
 let MESSAGES = [
   { id: 1, from: "buyer", text: "Do you have Simba chips in stock?", time: "14:10" },
   { id: 2, from: "me", text: "Yes, cheese & onion and salt & vinegar.", time: "14:12" },
   { id: 3, from: "buyer", text: "How much for 2?", time: "14:13" },
 ];
 
-const GREEN = "#0f7c5f";
-const screen = document.getElementById("screen");
-
-// ============ Nav ============
-document.querySelectorAll(".nav-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    render(btn.dataset.tab);
+// ============ Navigation Handler (Desktop + Mobile Sync) ============
+function setupNavigation() {
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.tab;
+      document.querySelectorAll(".nav-btn").forEach((b) => {
+        b.classList.toggle("active", b.dataset.tab === tab);
+      });
+      render(tab);
+    });
   });
-});
+}
 
 function render(tab) {
   if (tab === "wallet") renderWallet();
@@ -106,15 +126,17 @@ function render(tab) {
 let amount = "";
 
 function renderWallet() {
-  const sellerTitle = currentUser?.user_metadata?.business_name || currentUser?.user_metadata?.name || "Seller";
+  const meta = currentUser?.user_metadata || {};
+  const sellerTitle = meta.business_name || (meta.name ? `${meta.name[0]}. ${meta.surname || ""}` : "Seller");
+
   screen.innerHTML = `
     <div class="pad">
       <div class="header-row">
         <div>
           <h1 class="h1">Wallet</h1>
-          <p style="font-size:12px; color:#868b92; margin:0;">${sellerTitle}</p>
+          <p style="font-size:13px; color:var(--muted); margin:0;">${sellerTitle}</p>
         </div>
-        <button class="plus-btn" id="addCardBtn">
+        <button class="plus-btn" id="addCardBtn" title="Add Card">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
@@ -152,9 +174,18 @@ function renderWallet() {
 function renderCards() {
   const host = document.getElementById("cardStack");
   if (!host) return;
+  if (cards.length === 0) {
+    host.innerHTML = `
+      <div class="credit-card">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="20" height="20"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <div class="cc-num">•••• •••• •••• 4417</div>
+        <div class="cc-brand">Visa</div>
+      </div>`;
+    return;
+  }
   host.innerHTML = cards.map((c) => `
     <div class="credit-card">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="20" height="20"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
       <div class="cc-num">•••• •••• •••• ${c.last4}</div>
       <div class="cc-brand">${c.brand}</div>
     </div>`).join("");
@@ -167,15 +198,14 @@ async function loadCards() {
     .eq("user_id", currentUser.id)
     .order("created_at", { ascending: true });
   if (error) { console.error(error); return; }
-  cards = data || [];
-  renderCards();
+  if (data && data.length > 0) {
+    cards = data;
+    renderCards();
+  }
 }
 
 async function renderReceive() {
-  const sellerName =
-    currentUser?.user_metadata?.business_name ||
-    currentUser?.user_metadata?.name ||
-    "Seller";
+  const sellerName = currentUser?.user_metadata?.business_name || currentUser?.user_metadata?.name || "Seller";
 
   screen.innerHTML = `
     <div class="receive-wrap">
@@ -195,7 +225,6 @@ async function renderReceive() {
   });
 
   try {
-    // 1. Create a pending transaction record with a UUID in Supabase
     const { data: tx, error } = await supabase
       .from("transactions")
       .insert({
@@ -210,14 +239,12 @@ async function renderReceive() {
 
     if (error || !tx) {
       console.error("Transaction creation failed:", error);
-      document.getElementById("waitBox").innerHTML = `<span style="color:#e5484d;">Error: ${error?.message || "Failed to create transaction"}</span>`;
+      document.getElementById("waitBox").innerHTML = `<span style="color:var(--error);">Error: ${error?.message || "Failed to create transaction"}</span>`;
       return;
     }
 
-    // 2. Encode the transaction UUID in the QR code
     makeQR("qrBig", String(tx.id), 260);
 
-    // 3. Listen live via Supabase Realtime for the buyer confirmation
     paymentChannel = supabase
       .channel("tx-" + tx.id)
       .on(
@@ -233,7 +260,7 @@ async function renderReceive() {
       .subscribe();
   } catch (err) {
     console.error("renderReceive execution error:", err);
-    document.getElementById("waitBox").innerHTML = `<span style="color:#e5484d;">Could not generate payment QR.</span>`;
+    document.getElementById("waitBox").innerHTML = `<span style="color:var(--error);">Could not generate payment QR.</span>`;
   }
 }
 
@@ -342,7 +369,7 @@ async function renderActivity() {
   screen.innerHTML = `
     <div class="pad">
       <h1 class="h1">Activity</h1>
-      <div id="activityBody"><p style="color:#868b92">Loading…</p></div>
+      <div id="activityBody"><p style="color:var(--muted)">Loading…</p></div>
     </div>`;
 
   const { data: rows, error } = await supabase
@@ -355,7 +382,7 @@ async function renderActivity() {
   const body = document.getElementById("activityBody");
 
   if (error) {
-    body.innerHTML = `<p style="color:#868b92">Couldn't load activity.</p>`;
+    body.innerHTML = `<p style="color:var(--muted)">Couldn't load activity.</p>`;
     console.error(error);
     return;
   }
@@ -390,7 +417,7 @@ async function renderActivity() {
 
     <div class="date-label">${todayLabel}</div>
     <div class="tx-list">
-      ${all.length === 0 ? `<p style="color:#868b92">No activity yet.</p>` : all.map((r) => {
+      ${all.length === 0 ? `<p style="color:var(--muted); padding: 24px; text-align: center;">No activity yet.</p>` : all.map((r) => {
         const time = new Date(r.created_at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
         if (r.status === "withdrawal") {
           return `
@@ -429,7 +456,7 @@ function openWithdraw(balance) {
       <div class="handle"></div>
       <button class="sheet-close" id="wClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       <h2 class="sheet-title">Withdraw</h2>
-      <p style="font-size:13px;color:#6b7280;margin:0 0 16px">Available: <strong>R ${balance.toFixed(2)}</strong></p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px">Available: <strong>R ${balance.toFixed(2)}</strong></p>
       <label class="field-label">Amount</label>
       <input class="input" id="wAmount" inputmode="decimal" placeholder="0.00" />
       <p class="hint error" id="wError" style="min-height:16px;margin-top:6px"></p>
@@ -496,13 +523,8 @@ function showAbsaSms(amount) {
     setTimeout(() => sms.remove(), 400);
   }, 4000);
 }
+
 // ============ 3. ANALYTICS / SMART BOOKS ============
-
-
-// ===========================================
-// HELPERS
-// ===========================================
-
 function formatMoney(value) {
   return `R ${Number(value || 0).toLocaleString("en-ZA", {
     minimumFractionDigits: 2,
@@ -510,2623 +532,616 @@ function formatMoney(value) {
   })}`;
 }
 
-
 function dateOnly(date) {
   const year = date.getFullYear();
-
-  const month = String(
-    date.getMonth() + 1
-  ).padStart(2, "0");
-
-  const day = String(
-    date.getDate()
-  ).padStart(2, "0");
-
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-
-
-// ===========================================
-// MAIN ANALYTICS SCREEN
-// ===========================================
-
 async function renderAnalytics() {
-
   screen.innerHTML = `
     <div class="pad">
-
       <div class="analytics-heading">
-
-        <div>
-          <h1 class="h1">
-            Analytics
-          </h1>
-
-          <p class="analytics-subtitle">
-            Understand how your business is performing
-          </p>
-        </div>
-
+        <h1 class="h1">Analytics</h1>
+        <p class="analytics-subtitle">Understand how your business is performing</p>
       </div>
-
 
       <div class="analytics-tabs">
-
-        <button
-          class="analytics-tab active"
-          id="overviewTab"
-        >
-          Overview
-        </button>
-
-        <button
-          class="analytics-tab"
-          id="smartBooksTab"
-        >
-          Smart Books
-        </button>
-
+        <button class="analytics-tab active" id="overviewTab" type="button">Overview</button>
+        <button class="analytics-tab" id="smartBooksTab" type="button">Smart Books</button>
       </div>
 
-
       <div id="analyticsContent"></div>
+    </div>`;
 
-    </div>
-  `;
-
-
-  const overviewTab =
-    document.getElementById("overviewTab");
-
-  const smartBooksTab =
-    document.getElementById("smartBooksTab");
-
-  const host =
-    document.getElementById("analyticsContent");
-
+  const overviewTab = document.getElementById("overviewTab");
+  const smartBooksTab = document.getElementById("smartBooksTab");
+  const host = document.getElementById("analyticsContent");
 
   async function activateTab(tab) {
-
     overviewTab.classList.remove("active");
     smartBooksTab.classList.remove("active");
 
-
     if (tab === "overview") {
-
       overviewTab.classList.add("active");
-
       await renderAnalyticsOverview(host);
-
     } else {
-
       smartBooksTab.classList.add("active");
-
       await renderSmartBooks(host);
     }
   }
 
-
-  overviewTab.addEventListener(
-    "click",
-    () => activateTab("overview")
-  );
-
-
-  smartBooksTab.addEventListener(
-    "click",
-    () => activateTab("smartbooks")
-  );
-
+  overviewTab.addEventListener("click", () => activateTab("overview"));
+  smartBooksTab.addEventListener("click", () => activateTab("smartbooks"));
 
   await activateTab("overview");
 }
 
-
-
-// ===========================================
-// ANALYTICS OVERVIEW
-// ===========================================
-
 async function renderAnalyticsOverview(host) {
-
-  host.innerHTML = `
-    <div class="analytics-loading">
-      Loading business analytics...
-    </div>
-  `;
-
+  host.innerHTML = `<div class="analytics-loading">Loading business analytics...</div>`;
 
   const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
+  const { data: rows, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("seller_id", currentUser.id)
+    .eq("status", "paid")
+    .gte("created_at", monthStart.toISOString())
+    .lt("created_at", nextMonth.toISOString())
+    .order("created_at", { ascending: true });
 
-  const monthStart =
-    new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1
-    );
+  if (error) {
+    console.error("Analytics error:", error);
+    host.innerHTML = `<p class="analytics-loading">Could not load analytics.</p>`;
+    return;
+  }
 
+  const payments = rows || [];
+  const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0, value: 0 }));
 
-  const nextMonth =
-    new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      1
-    );
+  payments.forEach((p) => {
+    const hour = new Date(p.created_at).getHours();
+    hourly[hour].count += 1;
+    hourly[hour].value += Number(p.amount);
+  });
 
+  const peakHour = hourly.reduce((best, current) => (current.count > best.count ? current : best));
 
-  const { data: rows, error } =
-    await supabase
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const weekly = dayNames.map((day, index) => ({ day, index, total: 0, count: 0 }));
+
+  payments.forEach((p) => {
+    const day = new Date(p.created_at).getDay();
+    weekly[day].total += Number(p.amount);
+    weekly[day].count += 1;
+  });
+
+  const bestDay = weekly.reduce((best, current) => (current.total > best.total ? current : best));
+
+  const customerMap = {};
+  payments.forEach((p) => {
+    const name = p.buyer_name || "Buyer";
+    if (!customerMap[name]) customerMap[name] = { name, spent: 0, transactions: 0 };
+    customerMap[name].spent += Number(p.amount);
+    customerMap[name].transactions += 1;
+  });
+
+  const topCustomers = Object.values(customerMap).sort((a, b) => b.spent - a.spent).slice(0, 5);
+  const totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+  host.innerHTML = `
+    <div class="overview-banner">
+      <div>
+        <div class="overview-label">Revenue this month</div>
+        <div class="overview-value">${formatMoney(totalRevenue)}</div>
+        <div class="overview-note">${payments.length} verified Patela payment${payments.length === 1 ? "" : "s"}</div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-label">Peak hour</div>
+        <div class="stat-value">${peakHour.count > 0 ? `${String(peakHour.hour).padStart(2, "0")}:00` : "--"}</div>
+        <div class="stat-sub">${peakHour.count} sale${peakHour.count === 1 ? "" : "s"}</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-label">Best day</div>
+        <div class="stat-value">${bestDay.total > 0 ? bestDay.day : "--"}</div>
+        <div class="stat-sub">${formatMoney(bestDay.total)}</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Sales by hour</div>
+      <canvas id="hourChart"></canvas>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Earnings by day</div>
+      <canvas id="weekChart"></canvas>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Top customers</div>
+      <div class="top-list">
+        ${
+          topCustomers.length === 0
+            ? `<div class="empty-books">No customer activity yet.</div>`
+            : topCustomers
+                .map(
+                  (c, i) => `
+              <div class="top-row">
+                <span class="top-rank">${i + 1}</span>
+                <div style="flex:1">
+                  <div>${c.name}</div>
+                  <div class="customer-transactions">${c.transactions} transaction${c.transactions === 1 ? "" : "s"}</div>
+                </div>
+                <span class="top-spend">${formatMoney(c.spent)}</span>
+              </div>`
+                )
+                .join("")
+        }
+      </div>
+    </div>`;
+
+  const gridColor = "#eef0f2";
+
+  new Chart(document.getElementById("hourChart"), {
+    type: "bar",
+    data: {
+      labels: hourly.map((h) => `${String(h.hour).padStart(2, "0")}:00`),
+      datasets: [
+        {
+          data: hourly.map((h) => h.count),
+          backgroundColor: hourly.map((h) => (h.hour === peakHour.hour && peakHour.count > 0 ? GREEN : "#cfe7de")),
+          borderRadius: 4,
+        },
+      ],
+    },
+    options: barOpts(gridColor),
+  });
+
+  new Chart(document.getElementById("weekChart"), {
+    type: "line",
+    data: {
+      labels: weekly.map((w) => w.day),
+      datasets: [
+        {
+          data: weekly.map((w) => w.total),
+          borderColor: GREEN,
+          backgroundColor: GREEN,
+          borderWidth: 2.5,
+          pointRadius: 3,
+          tension: 0.35,
+          fill: false,
+        },
+      ],
+    },
+    options: barOpts(gridColor),
+  });
+}
+
+async function renderSmartBooks(host) {
+  host.innerHTML = `<div class="analytics-loading">Preparing Smart Books...</div>`;
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const monthName = now.toLocaleDateString("en-ZA", { month: "long", year: "numeric" });
+
+  const [transactionsResult, expensesResult, cashSalesResult] = await Promise.all([
+    supabase
       .from("transactions")
       .select("*")
       .eq("seller_id", currentUser.id)
       .eq("status", "paid")
-      .gte(
-        "created_at",
-        monthStart.toISOString()
-      )
-      .lt(
-        "created_at",
-        nextMonth.toISOString()
-      )
-      .order(
-        "created_at",
-        { ascending: true }
-      );
+      .gte("created_at", monthStart.toISOString())
+      .lt("created_at", nextMonth.toISOString())
+      .order("created_at", { ascending: true }),
 
-
-  if (error) {
-
-    console.error(
-      "Analytics error:",
-      error
-    );
-
-
-    host.innerHTML = `
-      <p class="analytics-loading">
-        Could not load analytics.
-      </p>
-    `;
-
-    return;
-  }
-
-
-  const payments =
-    rows || [];
-
-
-  // ===========================================
-  // HOURLY SALES
-  // ===========================================
-
-  const hourly =
-    Array.from(
-      { length: 24 },
-      (_, hour) => ({
-        hour,
-        count: 0,
-        value: 0,
-      })
-    );
-
-
-  payments.forEach(
-    (payment) => {
-
-      const hour =
-        new Date(
-          payment.created_at
-        ).getHours();
-
-
-      hourly[hour].count += 1;
-
-      hourly[hour].value +=
-        Number(payment.amount);
-    }
-  );
-
-
-  const peakHour =
-    hourly.reduce(
-      (best, current) =>
-        current.count > best.count
-          ? current
-          : best
-    );
-
-
-
-  // ===========================================
-  // SALES BY DAY
-  // ===========================================
-
-  const dayNames = [
-    "Sun",
-    "Mon",
-    "Tue",
-    "Wed",
-    "Thu",
-    "Fri",
-    "Sat",
-  ];
-
-
-  const weekly =
-    dayNames.map(
-      (day, index) => ({
-        day,
-        index,
-        total: 0,
-        count: 0,
-      })
-    );
-
-
-  payments.forEach(
-    (payment) => {
-
-      const day =
-        new Date(
-          payment.created_at
-        ).getDay();
-
-
-      weekly[day].total +=
-        Number(payment.amount);
-
-      weekly[day].count += 1;
-    }
-  );
-
-
-  const bestDay =
-    weekly.reduce(
-      (best, current) =>
-        current.total > best.total
-          ? current
-          : best
-    );
-
-
-
-  // ===========================================
-  // TOP CUSTOMERS
-  // ===========================================
-
-  const customerMap = {};
-
-
-  payments.forEach(
-    (payment) => {
-
-      const name =
-        payment.buyer_name ||
-        "Buyer";
-
-
-      if (!customerMap[name]) {
-
-        customerMap[name] = {
-          name,
-          spent: 0,
-          transactions: 0,
-        };
-      }
-
-
-      customerMap[name].spent +=
-        Number(payment.amount);
-
-
-      customerMap[name].transactions +=
-        1;
-    }
-  );
-
-
-  const topCustomers =
-    Object.values(customerMap)
-      .sort(
-        (a, b) =>
-          b.spent - a.spent
-      )
-      .slice(0, 5);
-
-
-
-  // ===========================================
-  // TOTAL DIGITAL REVENUE
-  // ===========================================
-
-  const totalRevenue =
-    payments.reduce(
-      (sum, payment) =>
-        sum +
-        Number(payment.amount),
-      0
-    );
-
-
-
-  // ===========================================
-  // DISPLAY
-  // ===========================================
-
-  host.innerHTML = `
-
-    <div class="overview-banner">
-
-      <div>
-
-        <div class="overview-label">
-          Revenue this month
-        </div>
-
-        <div class="overview-value">
-          ${formatMoney(totalRevenue)}
-        </div>
-
-        <div class="overview-note">
-
-          ${payments.length}
-
-          verified Patela payment${payments.length === 1 ? "" : "s"}
-
-        </div>
-
-      </div>
-
-    </div>
-
-
-
-    <div class="stat-row">
-
-
-      <div class="stat">
-
-        <div class="stat-label">
-          Peak hour
-        </div>
-
-        <div class="stat-value">
-
-          ${
-            peakHour.count > 0
-              ? `${String(
-                  peakHour.hour
-                ).padStart(
-                  2,
-                  "0"
-                )}:00`
-              : "--"
-          }
-
-        </div>
-
-        <div class="stat-sub">
-
-          ${peakHour.count}
-
-          sale${peakHour.count === 1 ? "" : "s"}
-
-        </div>
-
-      </div>
-
-
-
-      <div class="stat">
-
-        <div class="stat-label">
-          Best day
-        </div>
-
-        <div class="stat-value">
-
-          ${
-            bestDay.total > 0
-              ? bestDay.day
-              : "--"
-          }
-
-        </div>
-
-        <div class="stat-sub">
-          ${formatMoney(bestDay.total)}
-        </div>
-
-      </div>
-
-
-    </div>
-
-
-
-    <div class="chart-card">
-
-      <div class="chart-title">
-        Sales by hour
-      </div>
-
-      <canvas id="hourChart"></canvas>
-
-    </div>
-
-
-
-    <div class="chart-card">
-
-      <div class="chart-title">
-        Earnings by day
-      </div>
-
-      <canvas id="weekChart"></canvas>
-
-    </div>
-
-
-
-    <div class="chart-card">
-
-      <div class="chart-title">
-        Top customers
-      </div>
-
-
-      <div class="top-list">
-
-        ${
-          topCustomers.length === 0
-
-            ? `
-                <div class="empty-books">
-                  No customer activity yet.
-                </div>
-              `
-
-            : topCustomers
-                .map(
-                  (customer, i) => `
-
-                    <div class="top-row">
-
-                      <span class="top-rank">
-                        ${i + 1}
-                      </span>
-
-
-                      <div style="flex:1">
-
-                        <div>
-                          ${customer.name}
-                        </div>
-
-                        <div class="customer-transactions">
-
-                          ${customer.transactions}
-
-                          transaction${customer.transactions === 1 ? "" : "s"}
-
-                        </div>
-
-                      </div>
-
-
-                      <span class="top-spend">
-                        ${formatMoney(
-                          customer.spent
-                        )}
-                      </span>
-
-                    </div>
-                  `
-                )
-                .join("")
-        }
-
-      </div>
-
-    </div>
-  `;
-
-
-
-  // ===========================================
-  // CHARTS
-  // ===========================================
-
-  const gridColor =
-    "#eef0f2";
-
-
-  new Chart(
-    document.getElementById(
-      "hourChart"
-    ),
-    {
-
-      type: "bar",
-
-      data: {
-
-        labels:
-          hourly.map(
-            (item) =>
-              `${String(
-                item.hour
-              ).padStart(
-                2,
-                "0"
-              )}:00`
-          ),
-
-        datasets: [
-          {
-
-            data:
-              hourly.map(
-                (item) =>
-                  item.count
-              ),
-
-            backgroundColor:
-              hourly.map(
-                (item) =>
-
-                  item.hour ===
-                    peakHour.hour &&
-                  peakHour.count > 0
-
-                    ? GREEN
-
-                    : "#cfe7de"
-              ),
-
-            borderRadius: 4,
-          },
-        ],
-      },
-
-      options:
-        barOpts(gridColor),
-    }
-  );
-
-
-
-  new Chart(
-    document.getElementById(
-      "weekChart"
-    ),
-    {
-
-      type: "line",
-
-      data: {
-
-        labels:
-          weekly.map(
-            (item) =>
-              item.day
-          ),
-
-        datasets: [
-          {
-
-            data:
-              weekly.map(
-                (item) =>
-                  item.total
-              ),
-
-            borderColor:
-              GREEN,
-
-            backgroundColor:
-              GREEN,
-
-            borderWidth:
-              2.5,
-
-            pointRadius:
-              3,
-
-            tension:
-              0.35,
-
-            fill:
-              false,
-          },
-        ],
-      },
-
-      options:
-        barOpts(gridColor),
-    }
-  );
-}
-
-
-
-// ===========================================
-// SMART BOOKS
-// ===========================================
-
-async function renderSmartBooks(host) {
-
-  host.innerHTML = `
-    <div class="analytics-loading">
-      Preparing Smart Books...
-    </div>
-  `;
-
-
-  const now =
-    new Date();
-
-
-  const monthStart =
-    new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1
-    );
-
-
-  const nextMonth =
-    new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      1
-    );
-
-
-  const monthName =
-    now.toLocaleDateString(
-      "en-ZA",
-      {
-        month: "long",
-        year: "numeric",
-      }
-    );
-
-
-
-  // ===========================================
-  // FETCH BUSINESS DATA
-  // ===========================================
-
-  const [
-    transactionsResult,
-    expensesResult,
-    cashSalesResult,
-  ] = await Promise.all([
-
-
-    // DIGITAL SALES
-    supabase
-      .from("transactions")
-      .select("*")
-      .eq(
-        "seller_id",
-        currentUser.id
-      )
-      .eq(
-        "status",
-        "paid"
-      )
-      .gte(
-        "created_at",
-        monthStart.toISOString()
-      )
-      .lt(
-        "created_at",
-        nextMonth.toISOString()
-      )
-      .order(
-        "created_at",
-        { ascending: true }
-      ),
-
-
-    // BUSINESS EXPENSES
     supabase
       .from("expenses")
       .select("*")
-      .eq(
-        "seller_id",
-        currentUser.id
-      )
-      .gte(
-        "expense_date",
-        dateOnly(monthStart)
-      )
-      .lt(
-        "expense_date",
-        dateOnly(nextMonth)
-      )
-      .order(
-        "expense_date",
-        { ascending: false }
-      ),
+      .eq("seller_id", currentUser.id)
+      .gte("expense_date", dateOnly(monthStart))
+      .lt("expense_date", dateOnly(nextMonth))
+      .order("expense_date", { ascending: false }),
 
-
-    // CASH SALES
     supabase
       .from("cash_sales")
       .select("*")
-      .eq(
-        "seller_id",
-        currentUser.id
-      )
-      .gte(
-        "sale_date",
-        dateOnly(monthStart)
-      )
-      .lt(
-        "sale_date",
-        dateOnly(nextMonth)
-      )
-      .order(
-        "sale_date",
-        { ascending: false }
-      ),
+      .eq("seller_id", currentUser.id)
+      .gte("sale_date", dateOnly(monthStart))
+      .lt("sale_date", dateOnly(nextMonth))
+      .order("sale_date", { ascending: false }),
   ]);
 
-
-
-  // ===========================================
-  // ERROR CHECK
-  // ===========================================
-
-  if (
-    transactionsResult.error ||
-    expensesResult.error ||
-    cashSalesResult.error
-  ) {
-
-    console.error(
-      "Smart Books error:",
-      transactionsResult.error ||
-      expensesResult.error ||
-      cashSalesResult.error
-    );
-
-
-    host.innerHTML = `
-      <div class="empty-books">
-        Could not load Smart Books.
-      </div>
-    `;
-
+  if (transactionsResult.error || expensesResult.error || cashSalesResult.error) {
+    console.error("Smart Books error:", transactionsResult.error || expensesResult.error || cashSalesResult.error);
+    host.innerHTML = `<div class="empty-books">Could not load Smart Books.</div>`;
     return;
   }
 
+  const digitalSales = transactionsResult.data || [];
+  const expenses = expensesResult.data || [];
+  const cashSales = cashSalesResult.data || [];
 
+  const digitalRevenue = digitalSales.reduce((total, s) => total + Number(s.amount), 0);
+  const cashRevenue = cashSales.reduce((total, s) => total + Number(s.amount), 0);
+  const revenue = digitalRevenue + cashRevenue;
 
-  const digitalSales =
-    transactionsResult.data || [];
+  const costOfSales = expenses
+    .filter((e) => e.category === "stock")
+    .reduce((total, e) => total + Number(e.amount), 0);
 
+  const operatingExpenses = expenses
+    .filter((e) => e.category !== "stock")
+    .reduce((total, e) => total + Number(e.amount), 0);
 
-  const expenses =
-    expensesResult.data || [];
-
-
-  const cashSales =
-    cashSalesResult.data || [];
-
-
-
-  // ===========================================
-  // REVENUE
-  // ===========================================
-
-  const digitalRevenue =
-    digitalSales.reduce(
-      (total, sale) =>
-        total +
-        Number(sale.amount),
-      0
-    );
-
-
-  const cashRevenue =
-    cashSales.reduce(
-      (total, sale) =>
-        total +
-        Number(sale.amount),
-      0
-    );
-
-
-  const revenue =
-    digitalRevenue +
-    cashRevenue;
-
-
-
-  // ===========================================
-  // COST OF SALES
-  // ===========================================
-
-  const costOfSales =
-    expenses
-      .filter(
-        (expense) =>
-          expense.category ===
-          "stock"
-      )
-      .reduce(
-        (total, expense) =>
-          total +
-          Number(expense.amount),
-        0
-      );
-
-
-
-  // ===========================================
-  // OPERATING EXPENSES
-  // ===========================================
-
-  const operatingExpenses =
-    expenses
-      .filter(
-        (expense) =>
-          expense.category !==
-          "stock"
-      )
-      .reduce(
-        (total, expense) =>
-          total +
-          Number(expense.amount),
-        0
-      );
-
-
-
-  const totalExpenses =
-    costOfSales +
-    operatingExpenses;
-
-
-  const grossProfit =
-    revenue -
-    costOfSales;
-
-
-  const netProfit =
-    grossProfit -
-    operatingExpenses;
-
-
-  const netCashFlow =
-    revenue -
-    totalExpenses;
-
-
-  const profitMargin =
-    revenue > 0
-      ? (
-          netProfit /
-          revenue
-        ) * 100
-      : 0;
-
-
-
-  // ===========================================
-  // EXPENSE CATEGORIES
-  // ===========================================
+  const totalExpenses = costOfSales + operatingExpenses;
+  const grossProfit = revenue - costOfSales;
+  const netProfit = grossProfit - operatingExpenses;
+  const netCashFlow = revenue - totalExpenses;
+  const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
 
   const categoryLabels = {
-
-    stock:
-      "Stock / Inventory",
-
-    transport:
-      "Transport",
-
-    rent:
-      "Rent",
-
-    utilities:
-      "Utilities",
-
-    wages:
-      "Wages",
-
-    equipment:
-      "Equipment",
-
-    other:
-      "Other",
+    stock: "Stock / Inventory",
+    transport: "Transport",
+    rent: "Rent",
+    utilities: "Utilities",
+    wages: "Wages",
+    equipment: "Equipment",
+    other: "Other",
   };
 
-
   const expenseGroups = {};
-
-
-  expenses.forEach(
-    (expense) => {
-
-      const category =
-        expense.category ||
-        "other";
-
-
-      if (
-        !expenseGroups[category]
-      ) {
-
-        expenseGroups[category] =
-          0;
-      }
-
-
-      expenseGroups[category] +=
-        Number(expense.amount);
-    }
-  );
-
-
-
-  // ===========================================
-  // DISPLAY SMART BOOKS
-  // ===========================================
+  expenses.forEach((e) => {
+    const cat = e.category || "other";
+    if (!expenseGroups[cat]) expenseGroups[cat] = 0;
+    expenseGroups[cat] += Number(e.amount);
+  });
 
   host.innerHTML = `
-
     <div class="smartbooks-header">
-
-
       <div>
-
-        <div class="smartbooks-brand">
-          Smart Books
-        </div>
-
-
-        <div class="smartbooks-month">
-          ${monthName}
-        </div>
-
-
+        <div class="smartbooks-brand">Smart Books</div>
+        <div class="smartbooks-month">${monthName}</div>
         <div class="smartbooks-description">
-
-          Financial insights automatically prepared
-          from your Patela transactions, cash sales
-          and recorded business expenses.
-
+          Financial insights automatically prepared from your Patela transactions, cash sales and recorded business expenses.
         </div>
-
       </div>
 
-
-
-
-<div class="smartbooks-actions">
-
-  <button
-    class="download-report-btn"
-    id="downloadReportBtn"
-  >
-    ↓ Report
-  </button>
-
-  <button
-    class="cash-sale-btn"
-    id="addCashSaleBtn"
-  >
-    + Cash Sale
-  </button>
-
-  <button
-    class="add-expense-btn"
-    id="addExpenseBtn"
-  >
-    + Expense
-  </button>
-
-</div>
-
-
+      <div class="smartbooks-actions">
+        <button class="download-report-btn" id="downloadReportBtn">↓ Report</button>
+        <button class="cash-sale-btn" id="addCashSaleBtn">+ Cash Sale</button>
+        <button class="add-expense-btn" id="addExpenseBtn">+ Expense</button>
+      </div>
     </div>
 
-
-
-    <!-- =====================================
-         FINANCIAL SUMMARY
-    ====================================== -->
-
-
+    <!-- SUMMARY GRID -->
     <div class="books-summary-grid">
-
-
       <div class="books-summary-card">
-
-        <div class="books-summary-label">
-          Revenue
-        </div>
-
-
-        <div class="books-summary-value positive">
-          ${formatMoney(revenue)}
-        </div>
-
-
-        <div class="books-summary-sub">
-
-          ${digitalSales.length}
-          digital ·
-
-          ${cashSales.length}
-          cash
-
-        </div>
-
+        <div class="books-summary-label">Revenue</div>
+        <div class="books-summary-value positive">${formatMoney(revenue)}</div>
+        <div class="books-summary-sub">${digitalSales.length} digital · ${cashSales.length} cash</div>
       </div>
 
-
-
       <div class="books-summary-card">
-
-        <div class="books-summary-label">
-          Expenses
-        </div>
-
-
-        <div class="books-summary-value negative">
-          ${formatMoney(totalExpenses)}
-        </div>
-
-
-        <div class="books-summary-sub">
-
-          ${expenses.length}
-
-          recorded expense${expenses.length === 1 ? "" : "s"}
-
-        </div>
-
+        <div class="books-summary-label">Expenses</div>
+        <div class="books-summary-value negative">${formatMoney(totalExpenses)}</div>
+        <div class="books-summary-sub">${expenses.length} recorded expense${expenses.length === 1 ? "" : "s"}</div>
       </div>
 
-
-
       <div class="books-summary-card">
-
-        <div class="books-summary-label">
-          Net profit
-        </div>
-
-
-        <div
-          class="
-            books-summary-value
-            ${
-              netProfit >= 0
-                ? "positive"
-                : "negative"
-            }
-          "
-        >
-
-          ${formatMoney(netProfit)}
-
-        </div>
-
-
-        <div class="books-summary-sub">
-          ${profitMargin.toFixed(1)}% margin
-        </div>
-
+        <div class="books-summary-label">Net profit</div>
+        <div class="books-summary-value ${netProfit >= 0 ? "positive" : "negative"}">${formatMoney(netProfit)}</div>
+        <div class="books-summary-sub">${profitMargin.toFixed(1)}% margin</div>
       </div>
 
-
-
       <div class="books-summary-card">
-
-        <div class="books-summary-label">
-          Net cash flow
-        </div>
-
-
-        <div
-          class="
-            books-summary-value
-            ${
-              netCashFlow >= 0
-                ? "positive"
-                : "negative"
-            }
-          "
-        >
-
-          ${formatMoney(netCashFlow)}
-
-        </div>
-
-
-        <div class="books-summary-sub">
-          Operating cash movement
-        </div>
-
+        <div class="books-summary-label">Net cash flow</div>
+        <div class="books-summary-value ${netCashFlow >= 0 ? "positive" : "negative"}">${formatMoney(netCashFlow)}</div>
+        <div class="books-summary-sub">Operating cash movement</div>
       </div>
-
-
     </div>
 
-
-
-    <!-- =====================================
-         INCOME STATEMENT
-    ====================================== -->
-
-
+    <!-- INCOME STATEMENT -->
     <div class="books-card">
-
-
       <div class="books-card-head">
-
         <div>
-
-          <div class="books-card-title">
-            Income Statement
-          </div>
-
-          <div class="books-card-period">
-            For the month of ${monthName}
-          </div>
-
+          <div class="books-card-title">Income Statement</div>
+          <div class="books-card-period">For the month of ${monthName}</div>
         </div>
-
       </div>
-
-
 
       <div class="statement-table">
+        <div class="statement-section">Revenue</div>
+        <div class="statement-row"><span>Patela digital sales</span><strong>${formatMoney(digitalRevenue)}</strong></div>
+        <div class="statement-row"><span>Cash sales</span><strong>${formatMoney(cashRevenue)}</strong></div>
+        <div class="statement-row statement-total"><span>Total Revenue</span><strong>${formatMoney(revenue)}</strong></div>
 
+        <div class="statement-section">Cost of Sales</div>
+        <div class="statement-row"><span>Stock / Inventory</span><span>(${formatMoney(costOfSales)})</span></div>
+        <div class="statement-row statement-total"><span>Gross Profit</span><strong>${formatMoney(grossProfit)}</strong></div>
 
-        <div class="statement-section">
-          Revenue
-        </div>
-
-
-        <div class="statement-row">
-
-          <span>
-            Patela digital sales
-          </span>
-
-          <strong>
-            ${formatMoney(digitalRevenue)}
-          </strong>
-
-        </div>
-
-
-
-        <div class="statement-row">
-
-          <span>
-            Cash sales
-          </span>
-
-          <strong>
-            ${formatMoney(cashRevenue)}
-          </strong>
-
-        </div>
-
-
-
-        <div
-          class="
-            statement-row
-            statement-total
-          "
-        >
-
-          <span>
-            Total Revenue
-          </span>
-
-          <strong>
-            ${formatMoney(revenue)}
-          </strong>
-
-        </div>
-
-
-
-        <div class="statement-section">
-          Cost of Sales
-        </div>
-
-
-        <div class="statement-row">
-
-          <span>
-            Stock / Inventory
-          </span>
-
-          <span>
-            (${formatMoney(costOfSales)})
-          </span>
-
-        </div>
-
-
-
-        <div
-          class="
-            statement-row
-            statement-total
-          "
-        >
-
-          <span>
-            Gross Profit
-          </span>
-
-          <strong>
-            ${formatMoney(grossProfit)}
-          </strong>
-
-        </div>
-
-
-
-        <div class="statement-section">
-          Operating Expenses
-        </div>
-
-
+        <div class="statement-section">Operating Expenses</div>
         ${
-          Object
-            .entries(
-              expenseGroups
-            )
-            .filter(
-              ([category]) =>
-                category !==
-                "stock"
-            )
-            .map(
-              ([category, value]) => `
-
-                <div class="statement-row">
-
-                  <span>
-
-                    ${
-                      categoryLabels[
-                        category
-                      ] ||
-                      category
-                    }
-
-                  </span>
-
-                  <span>
-                    (${formatMoney(value)})
-                  </span>
-
-                </div>
-
-              `
-            )
-            .join("") ||
-
-          `
-
-            <div
-              class="
-                statement-row
-                muted-row
-              "
-            >
-
-              <span>
-                No operating expenses recorded
-              </span>
-
-              <span>
-                ${formatMoney(0)}
-              </span>
-
-            </div>
-
-          `
+          Object.entries(expenseGroups)
+            .filter(([cat]) => cat !== "stock")
+            .map(([cat, val]) => `<div class="statement-row"><span>${categoryLabels[cat] || cat}</span><span>(${formatMoney(val)})</span></div>`)
+            .join("") || `<div class="statement-row muted-row"><span>No operating expenses recorded</span><span>${formatMoney(0)}</span></div>`
         }
 
-
-
-        <div
-          class="
-            statement-row
-            statement-final
-          "
-        >
-
-          <span>
-            NET PROFIT
-          </span>
-
-          <strong
-            class="
-              ${
-                netProfit >= 0
-                  ? "positive-text"
-                  : "negative-text"
-              }
-            "
-          >
-
-            ${formatMoney(netProfit)}
-
-          </strong>
-
+        <div class="statement-row statement-final">
+          <span>NET PROFIT</span>
+          <strong class="${netProfit >= 0 ? "positive-text" : "negative-text"}">${formatMoney(netProfit)}</strong>
         </div>
-
-
       </div>
-
     </div>
 
-
-
-    <!-- =====================================
-         CASH FLOW STATEMENT
-    ====================================== -->
-
-
+    <!-- CASH FLOW STATEMENT -->
     <div class="books-card">
-
-
       <div class="books-card-head">
-
         <div>
-
-          <div class="books-card-title">
-            Cash Flow Statement
-          </div>
-
-
-          <div class="books-card-period">
-            For the month of ${monthName}
-          </div>
-
+          <div class="books-card-title">Cash Flow Statement</div>
+          <div class="books-card-period">For the month of ${monthName}</div>
         </div>
-
       </div>
-
-
 
       <div class="statement-table">
+        <div class="statement-section">Cash Inflows</div>
+        <div class="statement-row"><span>Patela payments received</span><strong class="positive-text">+${formatMoney(digitalRevenue)}</strong></div>
+        <div class="statement-row"><span>Cash sales received</span><strong class="positive-text">+${formatMoney(cashRevenue)}</strong></div>
+        <div class="statement-row statement-total"><span>Total Cash In</span><strong>${formatMoney(revenue)}</strong></div>
 
-
-        <div class="statement-section">
-          Cash Inflows
-        </div>
-
-
-
-        <div class="statement-row">
-
-          <span>
-            Patela payments received
-          </span>
-
-          <strong class="positive-text">
-            +${formatMoney(digitalRevenue)}
-          </strong>
-
-        </div>
-
-
-
-        <div class="statement-row">
-
-          <span>
-            Cash sales received
-          </span>
-
-          <strong class="positive-text">
-            +${formatMoney(cashRevenue)}
-          </strong>
-
-        </div>
-
-
-
-        <div
-          class="
-            statement-row
-            statement-total
-          "
-        >
-
-          <span>
-            Total Cash In
-          </span>
-
-          <strong>
-            ${formatMoney(revenue)}
-          </strong>
-
-        </div>
-
-
-
-        <div class="statement-section">
-          Cash Outflows
-        </div>
-
-
+        <div class="statement-section">Cash Outflows</div>
         ${
-          Object
-            .entries(
-              expenseGroups
-            )
-            .map(
-              ([category, value]) => `
-
-                <div class="statement-row">
-
-                  <span>
-
-                    ${
-                      categoryLabels[
-                        category
-                      ] ||
-                      category
-                    }
-
-                  </span>
-
-                  <span class="negative-text">
-                    -${formatMoney(value)}
-                  </span>
-
-                </div>
-
-              `
-            )
-            .join("") ||
-
-          `
-
-            <div
-              class="
-                statement-row
-                muted-row
-              "
-            >
-
-              <span>
-                No expenses recorded
-              </span>
-
-              <span>
-                ${formatMoney(0)}
-              </span>
-
-            </div>
-
-          `
+          Object.entries(expenseGroups)
+            .map(([cat, val]) => `<div class="statement-row"><span>${categoryLabels[cat] || cat}</span><span class="negative-text">-${formatMoney(val)}</span></div>`)
+            .join("") || `<div class="statement-row muted-row"><span>No expenses recorded</span><span>${formatMoney(0)}</span></div>`
         }
 
-
-
-        <div
-          class="
-            statement-row
-            statement-total
-          "
-        >
-
-          <span>
-            Total Cash Out
-          </span>
-
-          <strong>
-            ${formatMoney(totalExpenses)}
-          </strong>
-
+        <div class="statement-row statement-total"><span>Total Cash Out</span><strong>${formatMoney(totalExpenses)}</strong></div>
+        <div class="statement-row statement-final">
+          <span>NET CASH FLOW</span>
+          <strong class="${netCashFlow >= 0 ? "positive-text" : "negative-text"}">${formatMoney(netCashFlow)}</strong>
         </div>
-
-
-
-        <div
-          class="
-            statement-row
-            statement-final
-          "
-        >
-
-          <span>
-            NET CASH FLOW
-          </span>
-
-          <strong
-            class="
-              ${
-                netCashFlow >= 0
-                  ? "positive-text"
-                  : "negative-text"
-              }
-            "
-          >
-
-            ${formatMoney(netCashFlow)}
-
-          </strong>
-
-        </div>
-
-
       </div>
-
     </div>
 
-
-
-    <!-- =====================================
-         RECENT EXPENSES
-    ====================================== -->
-
-
+    <!-- RECENT EXPENSES -->
     <div class="books-card">
-
-
-      <div class="books-card-title">
-        Recent Expenses
-      </div>
-
-
+      <div class="books-card-title">Recent Expenses</div>
       <div class="expense-list">
-
-
         ${
           expenses.length === 0
-
-            ? `
-
-                <div class="empty-books">
-
-                  No expenses recorded yet.
-
-                  <br><br>
-
-                  Add your first business expense
-                  to start building your
-                  financial statements.
-
-                </div>
-
-              `
-
+            ? `<div class="empty-books">No expenses recorded yet.<br><br>Add your first business expense to start building your financial statements.</div>`
             : expenses
-                .slice(
-                  0,
-                  8
-                )
+                .slice(0, 8)
                 .map(
-                  (expense) => `
-
-                    <div class="expense-row">
-
-
-                      <div class="expense-icon">
-                        ↓
-                      </div>
-
-
-                      <div class="expense-details">
-
-
-                        <div class="expense-name">
-
-                          ${
-                            expense.description ||
-
-                            categoryLabels[
-                              expense.category
-                            ] ||
-
-                            "Expense"
-                          }
-
-                        </div>
-
-
-                        <div class="expense-meta">
-
-                          ${
-                            categoryLabels[
-                              expense.category
-                            ] ||
-
-                            expense.category
-                          }
-
-                          ·
-
-                          ${
-                            new Date(
-                              expense.expense_date +
-                              "T00:00:00"
-                            )
-                            .toLocaleDateString(
-                              "en-ZA",
-                              {
-                                day:
-                                  "numeric",
-
-                                month:
-                                  "short",
-                              }
-                            )
-                          }
-
-                        </div>
-
-
-                      </div>
-
-
-                      <div class="expense-amount">
-
-                        -${formatMoney(
-                          expense.amount
-                        )}
-
-                      </div>
-
-
-                    </div>
-
-                  `
+                  (e) => `
+              <div class="expense-row">
+                <div class="expense-icon">↓</div>
+                <div class="expense-details">
+                  <div class="expense-name">${e.description || categoryLabels[e.category] || "Expense"}</div>
+                  <div class="expense-meta">${categoryLabels[e.category] || e.category} · ${new Date(e.expense_date + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}</div>
+                </div>
+                <div class="expense-amount">-${formatMoney(e.amount)}</div>
+              </div>`
                 )
                 .join("")
         }
-
-
       </div>
-
     </div>
 
-
-
-    <!-- =====================================
-         RECENT CASH SALES
-    ====================================== -->
-
-
+    <!-- RECENT CASH SALES -->
     <div class="books-card">
-
-
-      <div class="books-card-title">
-        Recent Cash Sales
-      </div>
-
-
+      <div class="books-card-title">Recent Cash Sales</div>
       <div class="expense-list">
-
-
         ${
           cashSales.length === 0
-
-            ? `
-
-                <div class="empty-books">
-
-                  No cash sales recorded yet.
-
-                </div>
-
-              `
-
+            ? `<div class="empty-books">No cash sales recorded yet.</div>`
             : cashSales
-                .slice(
-                  0,
-                  8
-                )
+                .slice(0, 8)
                 .map(
-                  (sale) => `
-
-                    <div class="expense-row">
-
-
-                      <div
-                        class="expense-icon"
-                        style="
-                          background:#e8f7f1;
-                          color:#0f7c5f;
-                        "
-                      >
-                        ↑
-                      </div>
-
-
-                      <div class="expense-details">
-
-
-                        <div class="expense-name">
-
-                          ${
-                            sale.description ||
-                            "Cash sale"
-                          }
-
-                        </div>
-
-
-                        <div class="expense-meta">
-
-                          ${
-                            sale.customer_name
-                              ? sale.customer_name +
-                                " · "
-                              : ""
-                          }
-
-                          ${
-                            new Date(
-                              sale.sale_date +
-                              "T00:00:00"
-                            )
-                            .toLocaleDateString(
-                              "en-ZA",
-                              {
-                                day:
-                                  "numeric",
-
-                                month:
-                                  "short",
-                              }
-                            )
-                          }
-
-                        </div>
-
-
-                      </div>
-
-
-                      <div
-                        class="expense-amount"
-                        style="
-                          color:#0f7c5f;
-                        "
-                      >
-
-                        +${formatMoney(
-                          sale.amount
-                        )}
-
-                      </div>
-
-
-                    </div>
-
-                  `
+                  (s) => `
+              <div class="expense-row">
+                <div class="expense-icon" style="background:#e8f7f1; color:#0f7c5f;">↑</div>
+                <div class="expense-details">
+                  <div class="expense-name">${s.description || "Cash sale"}</div>
+                  <div class="expense-meta">${s.customer_name ? s.customer_name + " · " : ""}${new Date(s.sale_date + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}</div>
+                </div>
+                <div class="expense-amount" style="color:#0f7c5f;">+${formatMoney(s.amount)}</div>
+              </div>`
                 )
                 .join("")
         }
-
-
       </div>
-
     </div>
-
-
 
     <div class="books-disclaimer">
+      Smart Books provides management information based on transactions, cash sales and expenses recorded in Patela. It is not an audited financial statement.
+    </div>`;
 
-      Smart Books provides management information
-      based on transactions, cash sales and expenses
-      recorded in Patela.
-
-      It is not an audited financial statement.
-
-    </div>
-  `;
-
-
-
-  // ===========================================
-  // BUTTON EVENTS
-  // ===========================================
-
-  document
-    .getElementById(
-      "addExpenseBtn"
-    )
-    .addEventListener(
-      "click",
-      () => {
-
-        openAddExpense(
-          () =>
-            renderSmartBooks(
-              host
-            )
-        );
-
-      }
-    );
-
-
-  document
-    .getElementById(
-      "addCashSaleBtn"
-    )
-    .addEventListener(
-      "click",
-      () => {
-
-        openAddCashSale(
-          () =>
-            renderSmartBooks(
-              host
-            )
-        );
-
-      }
-    );
-
-
-
-    document
-  .getElementById("downloadReportBtn")
-  .addEventListener("click", () => {
-
+  document.getElementById("addExpenseBtn").addEventListener("click", () => openAddExpense(() => renderSmartBooks(host)));
+  document.getElementById("addCashSaleBtn").addEventListener("click", () => openAddCashSale(() => renderSmartBooks(host)));
+  document.getElementById("downloadReportBtn").addEventListener("click", () => {
     generateSmartBooksPDF({
-
       monthName,
-
       digitalRevenue,
-
       cashRevenue,
-
       revenue,
-
       costOfSales,
-
       grossProfit,
-
       operatingExpenses,
-
       totalExpenses,
-
       netProfit,
-
       netCashFlow,
-
       profitMargin,
-
       expenseGroups,
-
       categoryLabels,
-
       digitalSales,
-
       cashSales,
-
-      expenses
-
+      expenses,
     });
-
   });
 }
 
-
-
-// ===========================================
-// ADD EXPENSE
-// ===========================================
-
 function openAddExpense(onSaved) {
-
-  const div =
-    document.createElement(
-      "div"
-    );
-
-
-  div.className =
-    "overlay";
-
-
-  const today =
-    dateOnly(
-      new Date()
-    );
-
+  const div = document.createElement("div");
+  div.className = "overlay";
+  const today = dateOnly(new Date());
 
   div.innerHTML = `
-
     <div class="sheet">
-
-
       <div class="handle"></div>
-
-
-      <button
-        class="sheet-close"
-        id="expenseClose"
-      >
-
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          width="18"
-          height="18"
-        >
-
-          <path d="M18 6 6 18M6 6l12 12"/>
-
-        </svg>
-
-      </button>
-
-
-
-      <h2 class="sheet-title">
-        Add business expense
-      </h2>
-
-
-
-      <label class="field-label">
-        Amount
-      </label>
-
-
-      <input
-        class="input"
-        id="expenseAmount"
-        inputmode="decimal"
-        placeholder="0.00"
-      />
-
-
-
-      <label class="field-label">
-        Category
-      </label>
-
-
-      <select
-        class="input"
-        id="expenseCategory"
-      >
-
-        <option value="stock">
-          Stock / Inventory
-        </option>
-
-        <option value="transport">
-          Transport
-        </option>
-
-        <option value="rent">
-          Rent
-        </option>
-
-        <option value="utilities">
-          Utilities
-        </option>
-
-        <option value="wages">
-          Wages
-        </option>
-
-        <option value="equipment">
-          Equipment
-        </option>
-
-        <option value="other">
-          Other
-        </option>
-
+      <button class="sheet-close" id="expenseClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      <h2 class="sheet-title">Add business expense</h2>
+      <label class="field-label">Amount</label>
+      <input class="input" id="expenseAmount" inputmode="decimal" placeholder="0.00" />
+      <label class="field-label">Category</label>
+      <select class="input" id="expenseCategory">
+        <option value="stock">Stock / Inventory</option>
+        <option value="transport">Transport</option>
+        <option value="rent">Rent</option>
+        <option value="utilities">Utilities</option>
+        <option value="wages">Wages</option>
+        <option value="equipment">Equipment</option>
+        <option value="other">Other</option>
       </select>
-
-
-
-      <label class="field-label">
-        Description
-      </label>
-
-
-      <input
-        class="input"
-        id="expenseDescription"
-        placeholder="e.g. Bought stock for the shop"
-      />
-
-
-
-      <label class="field-label">
-        Date
-      </label>
-
-
-      <input
-        class="input"
-        id="expenseDate"
-        type="date"
-        value="${today}"
-      />
-
-
-
-      <label class="field-label">
-        Payment method
-      </label>
-
-
-      <select
-        class="input"
-        id="expenseMethod"
-      >
-
-        <option value="cash">
-          Cash
-        </option>
-
-        <option value="bank">
-          Bank
-        </option>
-
-        <option value="patela">
-          Patela
-        </option>
-
+      <label class="field-label">Description</label>
+      <input class="input" id="expenseDescription" placeholder="e.g. Bought stock for the shop" />
+      <label class="field-label">Date</label>
+      <input class="input" id="expenseDate" type="date" value="${today}" />
+      <label class="field-label">Payment method</label>
+      <select class="input" id="expenseMethod">
+        <option value="cash">Cash</option>
+        <option value="bank">Bank</option>
+        <option value="patela">Patela</option>
       </select>
-
-
-
-      <p
-        class="hint error"
-        id="expenseError"
-        style="min-height:18px"
-      ></p>
-
-
-
-      <button
-        class="primary-btn"
-        id="saveExpenseBtn"
-      >
-        Save expense
-      </button>
-
-
-    </div>
-  `;
-
-
-
-  document
-    .getElementById("app")
-    .appendChild(div);
-
-
-
-  const saveBtn =
-    div.querySelector(
-      "#saveExpenseBtn"
-    );
-
-
-  const errorEl =
-    div.querySelector(
-      "#expenseError"
-    );
-
-
-
-  saveBtn.addEventListener(
-    "click",
-    async () => {
-
-      const expenseAmount =
-        parseFloat(
-          div
-            .querySelector(
-              "#expenseAmount"
-            )
-            .value
-        );
-
-
-      const category =
-        div
-          .querySelector(
-            "#expenseCategory"
-          )
-          .value;
-
-
-      const description =
-        div
-          .querySelector(
-            "#expenseDescription"
-          )
-          .value
-          .trim();
-
-
-      const expenseDate =
-        div
-          .querySelector(
-            "#expenseDate"
-          )
-          .value;
-
-
-      const paymentMethod =
-        div
-          .querySelector(
-            "#expenseMethod"
-          )
-          .value;
-
-
-
-      if (
-        !expenseAmount ||
-        expenseAmount <= 0
-      ) {
-
-        errorEl.textContent =
-          "Enter a valid expense amount.";
-
-        return;
-      }
-
-
-
-      saveBtn.disabled =
-        true;
-
-
-      saveBtn.textContent =
-        "Saving...";
-
-
-
-      const { error } =
-        await supabase
-          .from("expenses")
-          .insert({
-
-            seller_id:
-              currentUser.id,
-
-            amount:
-              expenseAmount,
-
-            category,
-
-            description,
-
-            expense_date:
-              expenseDate,
-
-            payment_method:
-              paymentMethod,
-          });
-
-
-
-      if (error) {
-
-        console.error(
-          "Expense error:",
-          error
-        );
-
-
-        errorEl.textContent =
-          "Could not save expense.";
-
-
-        saveBtn.disabled =
-          false;
-
-
-        saveBtn.textContent =
-          "Save expense";
-
-
-        return;
-      }
-
-
-
-      div.remove();
-
-
-
-      if (onSaved) {
-
-        await onSaved();
-
-      }
-
+      <p class="hint error" id="expenseError" style="min-height:18px"></p>
+      <button class="primary-btn" id="saveExpenseBtn">Save expense</button>
+    </div>`;
+
+  document.getElementById("app").appendChild(div);
+
+  const saveBtn = div.querySelector("#saveExpenseBtn");
+  const errorEl = div.querySelector("#expenseError");
+
+  saveBtn.addEventListener("click", async () => {
+    const expenseAmount = parseFloat(div.querySelector("#expenseAmount").value);
+    const category = div.querySelector("#expenseCategory").value;
+    const description = div.querySelector("#expenseDescription").value.trim();
+    const expenseDate = div.querySelector("#expenseDate").value;
+    const paymentMethod = div.querySelector("#expenseMethod").value;
+
+    if (!expenseAmount || expenseAmount <= 0) {
+      errorEl.textContent = "Enter a valid expense amount.";
+      return;
     }
-  );
 
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
 
+    const { error } = await supabase.from("expenses").insert({
+      seller_id: currentUser.id,
+      amount: expenseAmount,
+      category,
+      description,
+      expense_date: expenseDate,
+      payment_method: paymentMethod,
+    });
 
-  div
-    .querySelector(
-      "#expenseClose"
-    )
-    .addEventListener(
-      "click",
-      () =>
-        div.remove()
-    );
-
-
-
-  div.addEventListener(
-    "click",
-    (event) => {
-
-      if (
-        event.target === div
-      ) {
-
-        div.remove();
-
-      }
-
+    if (error) {
+      console.error("Expense error:", error);
+      errorEl.textContent = "Could not save expense.";
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save expense";
+      return;
     }
-  );
+
+    div.remove();
+    if (onSaved) await onSaved();
+  });
+
+  div.querySelector("#expenseClose").addEventListener("click", () => div.remove());
+  div.addEventListener("click", (e) => { if (e.target === div) div.remove(); });
 }
-
-
-
-// ===========================================
-// ADD CASH SALE
-// ===========================================
 
 function openAddCashSale(onSaved) {
-
-  const div =
-    document.createElement(
-      "div"
-    );
-
-
-  div.className =
-    "overlay";
-
-
-  const today =
-    dateOnly(
-      new Date()
-    );
-
+  const div = document.createElement("div");
+  div.className = "overlay";
+  const today = dateOnly(new Date());
 
   div.innerHTML = `
-
     <div class="sheet">
-
-
       <div class="handle"></div>
-
-
-      <button
-        class="sheet-close"
-        id="cashSaleClose"
-      >
-
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          width="18"
-          height="18"
-        >
-
-          <path d="M18 6 6 18M6 6l12 12"/>
-
-        </svg>
-
-      </button>
-
-
-
-      <h2 class="sheet-title">
-        Record cash sale
-      </h2>
-
-
-      <p
-        style="
-          margin-top:-8px;
-          margin-bottom:18px;
-          font-size:12px;
-          color:#868b92;
-        "
-      >
-
-        Record a sale that was paid
-        for in cash.
-
+      <button class="sheet-close" id="cashSaleClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      <h2 class="sheet-title">Record cash sale</h2>
+      <p style="margin-top:-8px; margin-bottom:18px; font-size:12px; color:var(--muted);">
+        Record a sale that was paid for in cash.
       </p>
-
-
-
-      <label class="field-label">
-        Amount
-      </label>
-
-
-      <input
-        class="input"
-        id="cashSaleAmount"
-        inputmode="decimal"
-        placeholder="0.00"
-      />
-
-
-
-      <label class="field-label">
-        Description
-      </label>
-
-
-      <input
-        class="input"
-        id="cashSaleDescription"
-        placeholder="e.g. 2 Kotas and a cold drink"
-      />
-
-
-
-      <label class="field-label">
-        Customer name
-      </label>
-
-
-      <input
-        class="input"
-        id="cashSaleCustomer"
-        placeholder="Optional"
-      />
-
-
-
-      <label class="field-label">
-        Date
-      </label>
-
-
-      <input
-        class="input"
-        id="cashSaleDate"
-        type="date"
-        value="${today}"
-      />
-
-
-
-      <p
-        class="hint error"
-        id="cashSaleError"
-        style="min-height:18px"
-      ></p>
-
-
-
-      <button
-        class="primary-btn"
-        id="saveCashSaleBtn"
-      >
-        Record cash sale
-      </button>
-
-
-    </div>
-  `;
-
-
-
-  document
-    .getElementById("app")
-    .appendChild(div);
-
-
-
-  const saveBtn =
-    div.querySelector(
-      "#saveCashSaleBtn"
-    );
-
-
-  const errorEl =
-    div.querySelector(
-      "#cashSaleError"
-    );
-
-
-
-  saveBtn.addEventListener(
-    "click",
-    async () => {
-
-      const cashAmount =
-        parseFloat(
-          div
-            .querySelector(
-              "#cashSaleAmount"
-            )
-            .value
-        );
-
-
-      const description =
-        div
-          .querySelector(
-            "#cashSaleDescription"
-          )
-          .value
-          .trim();
-
-
-      const customerName =
-        div
-          .querySelector(
-            "#cashSaleCustomer"
-          )
-          .value
-          .trim();
-
-
-      const saleDate =
-        div
-          .querySelector(
-            "#cashSaleDate"
-          )
-          .value;
-
-
-
-      if (
-        !cashAmount ||
-        cashAmount <= 0
-      ) {
-
-        errorEl.textContent =
-          "Enter a valid sale amount.";
-
-        return;
-      }
-
-
-
-      saveBtn.disabled =
-        true;
-
-
-      saveBtn.textContent =
-        "Saving...";
-
-
-
-      const { error } =
-        await supabase
-          .from("cash_sales")
-          .insert({
-
-            seller_id:
-              currentUser.id,
-
-            amount:
-              cashAmount,
-
-            description,
-
-            customer_name:
-              customerName ||
-              null,
-
-            sale_date:
-              saleDate,
-          });
-
-
-
-      if (error) {
-
-        console.error(
-          "Cash sale error:",
-          error
-        );
-
-
-        errorEl.textContent =
-          "Could not record cash sale.";
-
-
-        saveBtn.disabled =
-          false;
-
-
-        saveBtn.textContent =
-          "Record cash sale";
-
-
-        return;
-      }
-
-
-
-      div.remove();
-
-
-
-      if (onSaved) {
-
-        await onSaved();
-
-      }
-
+      <label class="field-label">Amount</label>
+      <input class="input" id="cashSaleAmount" inputmode="decimal" placeholder="0.00" />
+      <label class="field-label">Description</label>
+      <input class="input" id="cashSaleDescription" placeholder="e.g. 2 Kotas and a cold drink" />
+      <label class="field-label">Customer name</label>
+      <input class="input" id="cashSaleCustomer" placeholder="Optional" />
+      <label class="field-label">Date</label>
+      <input class="input" id="cashSaleDate" type="date" value="${today}" />
+      <p class="hint error" id="cashSaleError" style="min-height:18px"></p>
+      <button class="primary-btn" id="saveCashSaleBtn">Record cash sale</button>
+    </div>`;
+
+  document.getElementById("app").appendChild(div);
+
+  const saveBtn = div.querySelector("#saveCashSaleBtn");
+  const errorEl = div.querySelector("#cashSaleError");
+
+  saveBtn.addEventListener("click", async () => {
+    const cashAmount = parseFloat(div.querySelector("#cashSaleAmount").value);
+    const description = div.querySelector("#cashSaleDescription").value.trim();
+    const customerName = div.querySelector("#cashSaleCustomer").value.trim();
+    const saleDate = div.querySelector("#cashSaleDate").value;
+
+    if (!cashAmount || cashAmount <= 0) {
+      errorEl.textContent = "Enter a valid sale amount.";
+      return;
     }
-  );
 
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
 
+    const { error } = await supabase.from("cash_sales").insert({
+      seller_id: currentUser.id,
+      amount: cashAmount,
+      description,
+      customer_name: customerName || null,
+      sale_date: saleDate,
+    });
 
-  div
-    .querySelector(
-      "#cashSaleClose"
-    )
-    .addEventListener(
-      "click",
-      () =>
-        div.remove()
-    );
-
-
-
-  div.addEventListener(
-    "click",
-    (event) => {
-
-      if (
-        event.target === div
-      ) {
-
-        div.remove();
-
-      }
-
+    if (error) {
+      console.error("Cash sale error:", error);
+      errorEl.textContent = "Could not record cash sale.";
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Record cash sale";
+      return;
     }
-  );
+
+    div.remove();
+    if (onSaved) await onSaved();
+  });
+
+  div.querySelector("#cashSaleClose").addEventListener("click", () => div.remove());
+  div.addEventListener("click", (e) => { if (e.target === div) div.remove(); });
 }
 
-// ===========================================
-// DOWNLOAD SMART BOOKS PDF
-// ===========================================
-
 function generateSmartBooksPDF(data) {
-
   const {
     monthName,
     digitalRevenue,
@@ -3143,1216 +1158,264 @@ function generateSmartBooksPDF(data) {
     categoryLabels,
     digitalSales,
     cashSales,
-    expenses
+    expenses,
   } = data;
 
-
-  // -------------------------------------------
-  // CHECK PDF LIBRARY
-  // -------------------------------------------
-
   if (!window.jspdf) {
-
     alert("PDF library could not be loaded.");
-
     return;
   }
 
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 16;
+  let y = 18;
 
-  const { jsPDF } =
-    window.jspdf;
+  const meta = currentUser?.user_metadata || {};
+  const businessName = meta.business_name || (meta.name ? `${meta.name[0]}. ${meta.surname || ""}` : "Patela Seller");
+  const sellerName = meta.name ? `${meta.name} ${meta.surname || ""}`.trim() : businessName;
+  const generatedDate = new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" });
 
-
-  const doc =
-    new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4"
-    });
-
-
-  const pageWidth =
-    doc.internal.pageSize.getWidth();
-
-
-  const margin =
-    16;
-
-
-  let y =
-    18;
-
-
-  // -------------------------------------------
-  // BUSINESS DETAILS
-  // -------------------------------------------
-
-  const businessName =
-    currentUser?.user_metadata?.business_name ||
-    currentUser?.user_metadata?.name ||
-    "Patela Seller";
-
-
-  const sellerName =
-    currentUser?.user_metadata?.name ||
-    businessName;
-
-
-  const generatedDate =
-    new Date().toLocaleDateString(
-      "en-ZA",
-      {
-        day: "numeric",
-        month: "long",
-        year: "numeric"
-      }
-    );
-
-
-  // ===========================================
-  // HEADER
-  // ===========================================
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(23);
-
-
-  doc.setTextColor(
-    15,
-    124,
-    95
-  );
-
-
-  doc.text(
-    "Patela",
-    margin,
-    y
-  );
-
+  doc.setTextColor(15, 124, 95);
+  doc.text("Patela", margin, y);
 
   doc.setFontSize(9);
+  doc.text("SMART BOOKS", margin, y + 7);
 
+  doc.setTextColor(40, 40, 40);
+  doc.setFont("helvetica", "normal");
+  doc.text("Financial Management Report", pageWidth - margin, y, { align: "right" });
 
-  doc.text(
-    "SMART BOOKS",
-    margin,
-    y + 7
-  );
-
-
-  doc.setTextColor(
-    40,
-    40,
-    40
-  );
-
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-
-  doc.text(
-    "Financial Management Report",
-    pageWidth - margin,
-    y,
-    {
-      align: "right"
-    }
-  );
-
-
-  doc.setTextColor(
-    110,
-    110,
-    110
-  );
-
-
-  doc.text(
-    monthName,
-    pageWidth - margin,
-    y + 6,
-    {
-      align: "right"
-    }
-  );
-
+  doc.setTextColor(110, 110, 110);
+  doc.text(monthName, pageWidth - margin, y + 6, { align: "right" });
 
   y += 20;
-
-
-  // -------------------------------------------
-  // GREEN LINE
-  // -------------------------------------------
-
-  doc.setDrawColor(
-    15,
-    124,
-    95
-  );
-
-
-  doc.setLineWidth(
-    0.7
-  );
-
-
-  doc.line(
-    margin,
-    y,
-    pageWidth - margin,
-    y
-  );
-
+  doc.setDrawColor(15, 124, 95);
+  doc.setLineWidth(0.7);
+  doc.line(margin, y, pageWidth - margin, y);
 
   y += 10;
-
-
-  // ===========================================
-  // MERCHANT DETAILS
-  // ===========================================
-
-  doc.setTextColor(
-    30,
-    30,
-    30
-  );
-
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-
+  doc.setTextColor(30, 30, 30);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-
-
-  doc.text(
-    businessName,
-    margin,
-    y
-  );
-
+  doc.text(businessName, margin, y);
 
   y += 7;
-
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-
-
-  doc.setTextColor(
-    100,
-    100,
-    100
-  );
-
-
-  doc.text(
-    `Seller: ${sellerName}`,
-    margin,
-    y
-  );
-
-
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Seller: ${sellerName}`, margin, y);
   y += 5;
-
-
-  doc.text(
-    `Patela account: ${ACCOUNT_CODE}`,
-    margin,
-    y
-  );
-
-
+  doc.text(`Patela account: ${ACCOUNT_CODE}`, margin, y);
   y += 5;
-
-
-  doc.text(
-    `Reporting period: ${monthName}`,
-    margin,
-    y
-  );
-
-
+  doc.text(`Reporting period: ${monthName}`, margin, y);
   y += 5;
-
-
-  doc.text(
-    `Generated: ${generatedDate}`,
-    margin,
-    y
-  );
-
+  doc.text(`Generated: ${generatedDate}`, margin, y);
 
   y += 13;
-
-
-  // ===========================================
-  // FINANCIAL SUMMARY
-  // ===========================================
-
-  doc.setTextColor(
-    30,
-    30,
-    30
-  );
-
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-
+  doc.setTextColor(30, 30, 30);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-
-
-  doc.text(
-    "Financial Summary",
-    margin,
-    y
-  );
-
+  doc.text("Financial Summary", margin, y);
 
   y += 5;
-
-
   doc.autoTable({
-
     startY: y,
-
     theme: "grid",
-
-    head: [[
-      "Revenue",
-      "Expenses",
-      "Net Profit",
-      "Margin"
-    ]],
-
-    body: [[
-      formatMoney(revenue),
-      formatMoney(totalExpenses),
-      formatMoney(netProfit),
-      `${profitMargin.toFixed(1)}%`
-    ]],
-
-    headStyles: {
-
-      fillColor: [
-        15,
-        124,
-        95
-      ],
-
-      textColor: [
-        255,
-        255,
-        255
-      ],
-
-      fontStyle: "bold"
-    },
-
-    styles: {
-
-      fontSize: 9,
-
-      cellPadding: 4,
-
-      halign: "center"
-    },
-
-    margin: {
-      left: margin,
-      right: margin
-    }
-
+    head: [["Revenue", "Expenses", "Net Profit", "Margin"]],
+    body: [[formatMoney(revenue), formatMoney(totalExpenses), formatMoney(netProfit), `${profitMargin.toFixed(1)}%`]],
+    headStyles: { fillColor: [15, 124, 95], textColor: [255, 255, 255], fontStyle: "bold" },
+    styles: { fontSize: 9, cellPadding: 4, halign: "center" },
+    margin: { left: margin, right: margin },
   });
 
-
-  y =
-    doc.lastAutoTable.finalY +
-    13;
-
-
-  // ===========================================
-  // INCOME STATEMENT
-  // ===========================================
-
-  doc.setTextColor(
-    30,
-    30,
-    30
-  );
-
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-
+  y = doc.lastAutoTable.finalY + 13;
+  doc.setTextColor(30, 30, 30);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-
-
-  doc.text(
-    "Income Statement",
-    margin,
-    y
-  );
-
+  doc.text("Income Statement", margin, y);
 
   y += 5;
-
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-
-
-  doc.setTextColor(
-    110,
-    110,
-    110
-  );
-
-
-  doc.text(
-    `For the month of ${monthName}`,
-    margin,
-    y
-  );
-
+  doc.setTextColor(110, 110, 110);
+  doc.text(`For the month of ${monthName}`, margin, y);
 
   y += 5;
-
-
   const incomeRows = [
-
-    [
-      "REVENUE",
-      ""
-    ],
-
-    [
-      "Patela digital sales",
-      formatMoney(
-        digitalRevenue
-      )
-    ],
-
-    [
-      "Cash sales",
-      formatMoney(
-        cashRevenue
-      )
-    ],
-
-    [
-      "Total Revenue",
-      formatMoney(
-        revenue
-      )
-    ],
-
-    [
-      "",
-      ""
-    ],
-
-    [
-      "COST OF SALES",
-      ""
-    ],
-
-    [
-      "Stock / Inventory",
-      `(${formatMoney(
-        costOfSales
-      )})`
-    ],
-
-    [
-      "Gross Profit",
-      formatMoney(
-        grossProfit
-      )
-    ],
-
-    [
-      "",
-      ""
-    ],
-
-    [
-      "OPERATING EXPENSES",
-      ""
-    ]
+    ["REVENUE", ""],
+    ["Patela digital sales", formatMoney(digitalRevenue)],
+    ["Cash sales", formatMoney(cashRevenue)],
+    ["Total Revenue", formatMoney(revenue)],
+    ["", ""],
+    ["COST OF SALES", ""],
+    ["Stock / Inventory", `(${formatMoney(costOfSales)})`],
+    ["Gross Profit", formatMoney(grossProfit)],
+    ["", ""],
+    ["OPERATING EXPENSES", ""],
   ];
 
+  Object.entries(expenseGroups)
+    .filter(([category]) => category !== "stock")
+    .forEach(([category, value]) => {
+      incomeRows.push([categoryLabels[category] || category, `(${formatMoney(value)})`]);
+    });
 
-  Object
-    .entries(expenseGroups)
-    .filter(
-      ([category]) =>
-        category !== "stock"
-    )
-    .forEach(
-      ([category, value]) => {
-
-        incomeRows.push([
-
-          categoryLabels[
-            category
-          ] || category,
-
-          `(${formatMoney(
-            value
-          )})`
-
-        ]);
-
-      }
-    );
-
-
-  if (
-    Object
-      .entries(expenseGroups)
-      .filter(
-        ([category]) =>
-          category !== "stock"
-      )
-      .length === 0
-  ) {
-
-    incomeRows.push([
-
-      "No operating expenses recorded",
-
-      formatMoney(0)
-
-    ]);
-
+  if (Object.entries(expenseGroups).filter(([category]) => category !== "stock").length === 0) {
+    incomeRows.push(["No operating expenses recorded", formatMoney(0)]);
   }
 
-
-  incomeRows.push(
-
-    [
-      "Total Operating Expenses",
-
-      formatMoney(
-        operatingExpenses
-      )
-    ],
-
-    [
-      "NET PROFIT",
-
-      formatMoney(
-        netProfit
-      )
-    ]
-
-  );
-
+  incomeRows.push(["Total Operating Expenses", formatMoney(operatingExpenses)], ["NET PROFIT", formatMoney(netProfit)]);
 
   doc.autoTable({
-
     startY: y,
-
     theme: "plain",
-
     body: incomeRows,
-
-    columnStyles: {
-
-      0: {
-        cellWidth: 120
-      },
-
-      1: {
-        halign: "right"
-      }
-
-    },
-
-    styles: {
-
-      fontSize: 9,
-
-      cellPadding: 2.5
-    },
-
+    columnStyles: { 0: { cellWidth: 120 }, 1: { halign: "right" } },
+    styles: { fontSize: 9, cellPadding: 2.5 },
     didParseCell(hookData) {
-
-      const label =
-        hookData.row.raw?.[0];
-
-
-      if (
-        [
-          "REVENUE",
-          "COST OF SALES",
-          "OPERATING EXPENSES"
-        ].includes(label)
-      ) {
-
-        hookData.cell.styles.fontStyle =
-          "bold";
-
-
-        hookData.cell.styles.textColor = [
-          15,
-          124,
-          95
-        ];
-
+      const label = hookData.row.raw?.[0];
+      if (["REVENUE", "COST OF SALES", "OPERATING EXPENSES"].includes(label)) {
+        hookData.cell.styles.fontStyle = "bold";
+        hookData.cell.styles.textColor = [15, 124, 95];
       }
-
-
-      if (
-        [
-          "Total Revenue",
-          "Gross Profit",
-          "Total Operating Expenses",
-          "NET PROFIT"
-        ].includes(label)
-      ) {
-
-        hookData.cell.styles.fontStyle =
-          "bold";
-
+      if (["Total Revenue", "Gross Profit", "Total Operating Expenses", "NET PROFIT"].includes(label)) {
+        hookData.cell.styles.fontStyle = "bold";
       }
-
     },
-
-    margin: {
-      left: margin,
-      right: margin
-    }
-
+    margin: { left: margin, right: margin },
   });
 
-
-  y =
-    doc.lastAutoTable.finalY +
-    14;
-
-
-  // ===========================================
-  // NEW PAGE IF NEEDED
-  // ===========================================
-
+  y = doc.lastAutoTable.finalY + 14;
   if (y > 215) {
-
     doc.addPage();
-
     y = 18;
-
   }
 
-
-  // ===========================================
-  // CASH FLOW STATEMENT
-  // ===========================================
-
-  doc.setTextColor(
-    30,
-    30,
-    30
-  );
-
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-
+  doc.setTextColor(30, 30, 30);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-
-
-  doc.text(
-    "Cash Flow Statement",
-    margin,
-    y
-  );
-
+  doc.text("Cash Flow Statement", margin, y);
 
   y += 5;
-
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-
-
-  doc.setTextColor(
-    110,
-    110,
-    110
-  );
-
-
-  doc.text(
-    `For the month of ${monthName}`,
-    margin,
-    y
-  );
-
+  doc.setTextColor(110, 110, 110);
+  doc.text(`For the month of ${monthName}`, margin, y);
 
   y += 5;
-
-
   const cashFlowRows = [
-
-    [
-      "CASH INFLOWS",
-      ""
-    ],
-
-    [
-      "Patela payments received",
-      formatMoney(
-        digitalRevenue
-      )
-    ],
-
-    [
-      "Cash sales received",
-      formatMoney(
-        cashRevenue
-      )
-    ],
-
-    [
-      "Total Cash In",
-      formatMoney(
-        revenue
-      )
-    ],
-
-    [
-      "",
-      ""
-    ],
-
-    [
-      "CASH OUTFLOWS",
-      ""
-    ]
+    ["CASH INFLOWS", ""],
+    ["Patela payments received", formatMoney(digitalRevenue)],
+    ["Cash sales received", formatMoney(cashRevenue)],
+    ["Total Cash In", formatMoney(revenue)],
+    ["", ""],
+    ["CASH OUTFLOWS", ""],
   ];
 
-
-  Object
-    .entries(expenseGroups)
-    .forEach(
-      ([category, value]) => {
-
-        cashFlowRows.push([
-
-          categoryLabels[
-            category
-          ] || category,
-
-          `(${formatMoney(
-            value
-          )})`
-
-        ]);
-
-      }
-    );
-
-
-  if (
-    expenses.length === 0
-  ) {
-
-    cashFlowRows.push([
-
-      "No expenses recorded",
-
-      formatMoney(0)
-
-    ]);
-
-  }
-
-
-  cashFlowRows.push(
-
-    [
-      "Total Cash Out",
-
-      formatMoney(
-        totalExpenses
-      )
-    ],
-
-    [
-      "NET CASH FLOW",
-
-      formatMoney(
-        netCashFlow
-      )
-    ]
-
-  );
-
-
-  doc.autoTable({
-
-    startY: y,
-
-    theme: "plain",
-
-    body: cashFlowRows,
-
-    columnStyles: {
-
-      0: {
-        cellWidth: 120
-      },
-
-      1: {
-        halign: "right"
-      }
-
-    },
-
-    styles: {
-
-      fontSize: 9,
-
-      cellPadding: 2.5
-    },
-
-    didParseCell(hookData) {
-
-      const label =
-        hookData.row.raw?.[0];
-
-
-      if (
-        [
-          "CASH INFLOWS",
-          "CASH OUTFLOWS"
-        ].includes(label)
-      ) {
-
-        hookData.cell.styles.fontStyle =
-          "bold";
-
-
-        hookData.cell.styles.textColor = [
-          15,
-          124,
-          95
-        ];
-
-      }
-
-
-      if (
-        [
-          "Total Cash In",
-          "Total Cash Out",
-          "NET CASH FLOW"
-        ].includes(label)
-      ) {
-
-        hookData.cell.styles.fontStyle =
-          "bold";
-
-      }
-
-    },
-
-    margin: {
-      left: margin,
-      right: margin
-    }
-
+  Object.entries(expenseGroups).forEach(([category, value]) => {
+    cashFlowRows.push([categoryLabels[category] || category, `(${formatMoney(value)})`]);
   });
 
-
-  y =
-    doc.lastAutoTable.finalY +
-    14;
-
-
-  // ===========================================
-  // ACTIVITY SUMMARY
-  // ===========================================
-
-  if (y > 220) {
-
-    doc.addPage();
-
-    y = 18;
-
+  if (expenses.length === 0) {
+    cashFlowRows.push(["No expenses recorded", formatMoney(0)]);
   }
 
+  cashFlowRows.push(["Total Cash Out", formatMoney(totalExpenses)], ["NET CASH FLOW", formatMoney(netCashFlow)]);
 
-  doc.setTextColor(
-    30,
-    30,
-    30
-  );
+  doc.autoTable({
+    startY: y,
+    theme: "plain",
+    body: cashFlowRows,
+    columnStyles: { 0: { cellWidth: 120 }, 1: { halign: "right" } },
+    styles: { fontSize: 9, cellPadding: 2.5 },
+    didParseCell(hookData) {
+      const label = hookData.row.raw?.[0];
+      if (["CASH INFLOWS", "CASH OUTFLOWS"].includes(label)) {
+        hookData.cell.styles.fontStyle = "bold";
+        hookData.cell.styles.textColor = [15, 124, 95];
+      }
+      if (["Total Cash In", "Total Cash Out", "NET CASH FLOW"].includes(label)) {
+        hookData.cell.styles.fontStyle = "bold";
+      }
+    },
+    margin: { left: margin, right: margin },
+  });
 
+  y = doc.lastAutoTable.finalY + 14;
+  if (y > 220) {
+    doc.addPage();
+    y = 18;
+  }
 
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-
+  doc.setTextColor(30, 30, 30);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-
-
-  doc.text(
-    "Business Activity",
-    margin,
-    y
-  );
-
+  doc.text("Business Activity", margin, y);
 
   y += 5;
-
-
   doc.autoTable({
-
     startY: y,
-
     theme: "grid",
-
-    head: [[
-      "Activity",
-      "Count",
-      "Value"
-    ]],
-
+    head: [["Activity", "Count", "Value"]],
     body: [
-
-      [
-        "Digital sales",
-        digitalSales.length,
-        formatMoney(
-          digitalRevenue
-        )
-      ],
-
-      [
-        "Cash sales",
-        cashSales.length,
-        formatMoney(
-          cashRevenue
-        )
-      ],
-
-      [
-        "Business expenses",
-        expenses.length,
-        formatMoney(
-          totalExpenses
-        )
-      ]
-
+      ["Digital sales", digitalSales.length, formatMoney(digitalRevenue)],
+      ["Cash sales", cashSales.length, formatMoney(cashRevenue)],
+      ["Business expenses", expenses.length, formatMoney(totalExpenses)],
     ],
-
-    headStyles: {
-
-      fillColor: [
-        15,
-        124,
-        95
-      ],
-
-      textColor: [
-        255,
-        255,
-        255
-      ]
-
-    },
-
-    styles: {
-
-      fontSize: 9,
-
-      cellPadding: 3
-
-    },
-
-    margin: {
-      left: margin,
-      right: margin
-    }
-
+    headStyles: { fillColor: [15, 124, 95], textColor: [255, 255, 255] },
+    styles: { fontSize: 9, cellPadding: 3 },
+    margin: { left: margin, right: margin },
   });
 
-
-  y =
-    doc.lastAutoTable.finalY +
-    13;
-
-
-  // ===========================================
-  // DISCLAIMER
-  // ===========================================
-
+  y = doc.lastAutoTable.finalY + 13;
   if (y > 250) {
-
     doc.addPage();
-
     y = 18;
-
   }
 
-
-  doc.setFont(
-    "helvetica",
-    "italic"
-  );
-
-
+  doc.setFont("helvetica", "italic");
   doc.setFontSize(7.5);
-
-
-  doc.setTextColor(
-    110,
-    110,
-    110
-  );
-
-
+  doc.setTextColor(110, 110, 110);
   const disclaimer =
     "This report was automatically generated by Patela Smart Books using transactions, cash sales and business expenses recorded by the merchant. It is intended for business management and informational purposes and does not constitute audited financial statements.";
+  const disclaimerLines = doc.splitTextToSize(disclaimer, pageWidth - margin * 2);
+  doc.text(disclaimerLines, margin, y);
 
-
-  const disclaimerLines =
-    doc.splitTextToSize(
-      disclaimer,
-      pageWidth -
-      margin * 2
-    );
-
-
-  doc.text(
-    disclaimerLines,
-    margin,
-    y
-  );
-
-
-  // ===========================================
-  // FOOTERS
-  // ===========================================
-
-  const pageCount =
-    doc.internal.getNumberOfPages();
-
-
-  for (
-    let page = 1;
-    page <= pageCount;
-    page++
-  ) {
-
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
     doc.setPage(page);
-
-
-    doc.setDrawColor(
-      225,
-      225,
-      225
-    );
-
-
-    doc.line(
-      margin,
-      284,
-      pageWidth - margin,
-      284
-    );
-
-
-    doc.setFont(
-      "helvetica",
-      "normal"
-    );
-
-
+    doc.setDrawColor(225, 225, 225);
+    doc.line(margin, 284, pageWidth - margin, 284);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
-
-
-    doc.setTextColor(
-      130,
-      130,
-      130
-    );
-
-
-    doc.text(
-      "Generated by Patela Smart Books",
-      margin,
-      290
-    );
-
-
-    doc.text(
-      `Page ${page} of ${pageCount}`,
-      pageWidth - margin,
-      290,
-      {
-        align: "right"
-      }
-    );
-
+    doc.setTextColor(130, 130, 130);
+    doc.text("Generated by Patela Smart Books", margin, 290);
+    doc.text(`Page ${page} of ${pageCount}`, pageWidth - margin, 290, { align: "right" });
   }
 
-
-  // ===========================================
-  // FILE NAME
-  // ===========================================
-
-  const safeBusinessName =
-    businessName
-      .replace(
-        /[^a-z0-9]/gi,
-        "-"
-      )
-      .replace(
-        /-+/g,
-        "-"
-      )
-      .toLowerCase();
-
-
-  const safeMonth =
-    monthName
-      .replace(
-        /\s+/g,
-        "-"
-      )
-      .toLowerCase();
-
-
-  const fileName =
-    `patela-${safeBusinessName}-${safeMonth}-financial-report.pdf`;
-
-
-  // ===========================================
-  // DOWNLOAD
-  // ===========================================
+  const safeBusinessName = businessName.replace(/[^a-z0-9]/gi, "-").replace(/-+/g, "-").toLowerCase();
+  const safeMonth = monthName.replace(/\s+/g, "-").toLowerCase();
+  const fileName = `patela-${safeBusinessName}-${safeMonth}-financial-report.pdf`;
 
   doc.save(fileName);
 }
 
-// ===========================================
-// CHART OPTIONS
-// ===========================================
-
 function barOpts(grid) {
-
   return {
-
-    responsive:
-      true,
-
-    maintainAspectRatio:
-      false,
-
-
-    plugins: {
-
-      legend: {
-        display:
-          false,
-      },
-
-    },
-
-
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
     scales: {
-
-      x: {
-
-        grid: {
-          display:
-            false,
-        },
-
-        ticks: {
-
-          color:
-            "#6b7280",
-
-          font: {
-            size:
-              11,
-          },
-
-        },
-
-      },
-
-
-      y: {
-
-        grid: {
-          color:
-            grid,
-        },
-
-        ticks: {
-
-          color:
-            "#6b7280",
-
-          font: {
-            size:
-              11,
-          },
-
-        },
-
-        beginAtZero:
-          true,
-
-      },
-
+      x: { grid: { display: false }, ticks: { color: "#6b7280", font: { size: 11 } } },
+      y: { grid: { color: grid }, ticks: { color: "#6b7280", font: { size: 11 } }, beginAtZero: true },
     },
-
   };
 }
+
 // ============ 4. MAP ============
 function renderMap() {
   screen.innerHTML = `
@@ -4375,10 +1438,15 @@ function renderMap() {
 function initGoogleMap() {
   const el = document.getElementById("map");
   if (!(window.google && window.google.maps)) {
-    el.parentElement.insertAdjacentHTML("beforeend",
-      `<div class="map-error">Map couldn't load. Check that the Maps JavaScript API is enabled, billing is on, and this domain is allowed for your API key.</div>`);
+    el.parentElement.insertAdjacentHTML(
+      "beforeend",
+      `<div class="map-error" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:#2f3a2c;">
+        Map couldn't load. Check that the Maps JavaScript API is enabled.
+      </div>`
+    );
     return;
   }
+
   const map = new google.maps.Map(el, {
     center: SELLER_LOC,
     zoom: 16,
@@ -4418,8 +1486,11 @@ function initGoogleMap() {
       map,
     });
   }
+
   new google.maps.Marker({
-    position: SELLER_LOC, map, title: "Your shop",
+    position: SELLER_LOC,
+    map,
+    title: "Your shop",
     icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: GREEN, fillOpacity: 1, strokeColor: "#fff", strokeWeight: 3 },
   });
 }
@@ -4462,7 +1533,7 @@ function openChat() {
   div.addEventListener("click", (e) => { if (e.target === div) div.remove(); });
 }
 
-// ============ QR helper ============
+// ============ QR Helper ============
 function makeQR(hostId, value, size) {
   const host = document.getElementById(hostId);
   if (!host) return;

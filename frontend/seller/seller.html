@@ -1,308 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patela | Seller Dashboard</title>
+  <link rel="stylesheet" href="seller.css" />
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
-
-  <title>Patela - Seller</title>
-
-  <link
-    rel="stylesheet"
-    href="seller.css"
-  />
+  <!-- Libraries (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD6xtbTLrG1jKICo1tZhl10dL1S-rgEGH8&libraries=visualization"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
-
 <body>
+  <div id="app" class="dashboard-layout">
 
-  <div id="app">
-
-    <!-- ========================================
-         TOP BAR
-    ========================================= -->
-
-    <header class="topbar">
-
-      <span class="brand">
-        Patela
-      </span>
-
-      <div
-        style="
-          display:flex;
-          align-items:center;
-          gap:10px;
-        "
-      >
-
-        <span class="role-chip">
-          Seller
-        </span>
-
-        <button
-          id="logoutBtn"
-          type="button"
-          title="Sign out"
-          aria-label="Sign out"
-          style="
-            background:none;
-            border:none;
-            cursor:pointer;
-            color:#e5484d;
-            display:inline-flex;
-            align-items:center;
-            justify-content:center;
-            padding:4px;
-          "
-        >
-
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            width="18"
-            height="18"
-          >
-
-            <path
-              d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
-            />
-
+    <!-- Desktop Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-mark">
+          <svg viewBox="0 0 40 40" fill="none" width="38" height="38">
+            <rect width="40" height="40" rx="12" fill="#10a37f"/>
+            <path d="M12 28V12h8a6 6 0 1 1 0 12h-8" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="28" cy="26" r="3.5" fill="#ffffff"/>
           </svg>
-
-        </button>
-
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">Patela</span>
+          <span class="role-badge">Seller Portal</span>
+        </div>
       </div>
 
-    </header>
+      <!-- Merchant Code & Status Card -->
+      <div class="sidebar-wallet-card">
+        <span class="sw-label">Merchant Wallet</span>
+        <span class="sw-amount" id="sidebarAccountCode">PTL-0000-0000</span>
+        <div class="sw-pill" id="sidebarPill">Loading...</div>
+      </div>
 
+      <!-- Navigation Menu -->
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" data-tab="wallet" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>
+          </svg>
+          <span>Wallet & Pay</span>
+        </button>
 
-    <!-- ========================================
-         MAIN SCREEN
-    ========================================= -->
+        <button class="nav-btn" data-tab="activity" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+          <span>Sales & Payouts</span>
+        </button>
 
-    <main
-      id="screen"
-      class="screen"
-    ></main>
+        <button class="nav-btn" data-tab="analytics" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/>
+          </svg>
+          <span>Smart Books</span>
+        </button>
 
+        <button class="nav-btn" data-tab="map" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+          <span>Customer Hotspots</span>
+        </button>
+      </nav>
 
-    <!-- ========================================
-         BOTTOM NAVIGATION
-    ========================================= -->
+      <!-- Sidebar Profile & Logout -->
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar" id="sidebarAvatar">S</div>
+          <div class="user-details">
+            <span class="user-name" id="sidebarUserName">Merchant</span>
+            <span class="user-status">Trading Active</span>
+          </div>
+        </div>
+        <button id="logoutBtn" type="button" title="Sign out" aria-label="Sign out" class="logout-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+        </button>
+      </div>
+    </aside>
 
-    <nav
-      class="nav"
-      id="nav"
-      aria-label="Seller navigation"
-    >
+    <!-- Main Content Workspace -->
+    <div class="main-wrapper">
+      
+      <!-- Mobile Header -->
+      <header class="mobile-topbar">
+        <div class="mobile-brand">
+          <div class="logo-mark">
+            <svg viewBox="0 0 40 40" fill="none" width="32" height="32">
+              <rect width="40" height="40" rx="10" fill="#10a37f"/>
+              <path d="M12 28V12h8a6 6 0 1 1 0 12h-8" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="28" cy="26" r="3.5" fill="#ffffff"/>
+            </svg>
+          </div>
+          <span class="brand-title">Patela</span>
+        </div>
+        <div class="mobile-actions">
+          <span class="role-chip">Seller</span>
+          <button id="mobileLogoutBtn" type="button" title="Sign out" aria-label="Sign out" class="logout-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+            </svg>
+          </button>
+        </div>
+      </header>
 
-      <!-- Wallet -->
+      <!-- Dynamic Screen Host -->
+      <main id="screen" class="content-host"></main>
 
-      <button
-        class="nav-btn active"
-        data-tab="wallet"
-        type="button"
-      >
-
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          width="22"
-          height="22"
-        >
-
-          <path d="M20 12V8H6a2 2 0 0 1 0-4h12v4" />
-
-          <path d="M4 6v12a2 2 0 0 0 2 2h14v-4" />
-
-          <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
-
-        </svg>
-
-        <span>
-          Wallet
-        </span>
-
-      </button>
-
-
-      <!-- Activity -->
-
-      <button
-        class="nav-btn"
-        data-tab="activity"
-        type="button"
-      >
-
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          width="22"
-          height="22"
-        >
-
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-
-        </svg>
-
-        <span>
-          Activity
-        </span>
-
-      </button>
-
-
-      <!-- Analytics -->
-
-      <button
-        class="nav-btn"
-        data-tab="analytics"
-        type="button"
-      >
-
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          width="22"
-          height="22"
-        >
-
-          <path d="M3 3v18h18" />
-
-          <rect
-            x="7"
-            y="10"
-            width="3"
-            height="7"
-          />
-
-          <rect
-            x="12"
-            y="6"
-            width="3"
-            height="11"
-          />
-
-          <rect
-            x="17"
-            y="13"
-            width="3"
-            height="4"
-          />
-
-        </svg>
-
-        <span>
-          Analytics
-        </span>
-
-      </button>
-
-
-      <!-- Map -->
-
-      <button
-        class="nav-btn"
-        data-tab="map"
-        type="button"
-      >
-
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          width="22"
-          height="22"
-        >
-
-          <path
-            d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"
-          />
-
-          <circle
-            cx="12"
-            cy="10"
-            r="3"
-          />
-
-        </svg>
-
-        <span>
-          Map
-        </span>
-
-      </button>
-
-    </nav>
+      <!-- Mobile Bottom Navigation -->
+      <nav class="mobile-nav" id="nav" aria-label="Seller mobile navigation">
+        <button class="nav-btn active" data-tab="wallet" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+          <span>Wallet</span>
+        </button>
+        <button class="nav-btn" data-tab="activity" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <span>Sales</span>
+        </button>
+        <button class="nav-btn" data-tab="analytics" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>
+          <span>Books</span>
+        </button>
+        <button class="nav-btn" data-tab="map" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span>Hotspots</span>
+        </button>
+      </nav>
+    </div>
 
   </div>
 
-
-  <!-- ========================================
-       CHART.JS
-  ========================================= -->
-
-  <script
-    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
-  ></script>
-
-
-  <!-- ========================================
-       QR CODE
-  ========================================= -->
-
-  <script
-    src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"
-  ></script>
-
-
-  <!-- ========================================
-       GOOGLE MAPS
-
-       Put your existing restricted Google
-       Maps browser key below.
-  ========================================= -->
-
-  <script
-    src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=visualization"
-  ></script>
-
-
-  <!-- ========================================
-       PDF GENERATION
-  ========================================= -->
-
-  <script
-    src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
-  ></script>
-
-  <script
-    src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"
-  ></script>
-
-
-  <!-- ========================================
-       SELLER APPLICATION
-  ========================================= -->
-
-  <script
-    type="module"
-    src="seller.js"
-  ></script>
-
+  <script type="module" src="seller.js"></script>
 </body>
-
 </html>

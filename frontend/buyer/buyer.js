@@ -1,7 +1,22 @@
 import { supabase } from "../shared/supabaseClient.js";
 
-// ============ Auth Guard (Option 1: Strict Role Separation) ============
+// ============ Auth Guard & State ============
 let currentUser = null;
+let cards = [];
+let qrScanner = null;
+let CHAT = {};
+
+const GREEN = "#10a37f";
+const screen = document.getElementById("screen");
+
+const BUYER_LOC = { lat: -25.7479, lng: 28.2293 };
+const SELLERS = [
+  { id: 1, name: "Thabo's Spaza", lat: -25.7460, lng: 28.2270, service: "Spaza Shop", rating: 4.7, dist: "220 m", sells: ["Bread", "Milk", "Airtime", "Cold drinks", "Snacks"] },
+  { id: 2, name: "Mama Nomsa Kota", lat: -25.7495, lng: 28.2310, service: "Kota & Fast Food", rating: 4.9, dist: "480 m", sells: ["Kota", "Chips", "Russians", "Vetkoek"] },
+  { id: 3, name: "Sipho Cuts", lat: -25.7470, lng: 28.2325, service: "Barber", rating: 4.5, dist: "610 m", sells: ["Haircut", "Fade", "Beard trim", "Line-up"] },
+  { id: 4, name: "Lerato Salon", lat: -25.7455, lng: 28.2255, service: "Salon & Hair", rating: 4.8, dist: "300 m", sells: ["Braids", "Weave", "Nails", "Wash & blow"] },
+  { id: 5, name: "Kagiso Car Wash", lat: -25.7500, lng: 28.2280, service: "Car Wash", rating: 4.3, dist: "540 m", sells: ["Full wash", "Wax", "Interior valet"] },
+];
 
 async function checkSession() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -18,8 +33,20 @@ async function checkSession() {
   }
 
   currentUser = session.user;
-  document.getElementById("logoutBtn")?.addEventListener("click", handleSignOut);
 
+  // Hydrate Sidebar Profile info if available
+  const buyerName = currentUser?.user_metadata?.name || "Buyer";
+  const nameEl = document.getElementById("sidebarUserName");
+  const avatarEl = document.getElementById("sidebarAvatar");
+  if (nameEl) nameEl.textContent = buyerName;
+  if (avatarEl) avatarEl.textContent = buyerName[0].toUpperCase();
+
+  // Attach signout listeners to both desktop and mobile logout buttons
+  document.getElementById("logoutBtn")?.addEventListener("click", handleSignOut);
+  document.getElementById("mobileLogoutBtn")?.addEventListener("click", handleSignOut);
+
+  setupNavigation();
+  updateSidebarBalance();
   render("wallet");
 }
 
@@ -29,48 +56,35 @@ async function handleSignOut() {
   window.location.href = "../login/login.html";
 }
 
-// ============ Config & Mock Data ============
-const GREEN = "#0f7c5f";
-const screen = document.getElementById("screen");
+// Update the balance display widget on the sidebar
+async function updateSidebarBalance() {
+  const balEl = document.getElementById("sidebarBalance");
+  if (!balEl) return;
 
-let cards = [];
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("amount")
+    .eq("buyer_id", currentUser.id)
+    .eq("status", "paid");
 
-const BUYER_LOC = { lat: -25.7479, lng: 28.2293 };
-const SELLERS = [
-  { id: 1, name: "Thabo's Spaza", lat: -25.7460, lng: 28.2270, service: "Spaza Shop", rating: 4.7, dist: "220 m", sells: ["Bread", "Milk", "Airtime", "Cold drinks", "Snacks"] },
-  { id: 2, name: "Mama Nomsa Kota", lat: -25.7495, lng: 28.2310, service: "Kota & Fast Food", rating: 4.9, dist: "480 m", sells: ["Kota", "Chips", "Russians", "Vetkoek"] },
-  { id: 3, name: "Sipho Cuts", lat: -25.7470, lng: 28.2325, service: "Barber", rating: 4.5, dist: "610 m", sells: ["Haircut", "Fade", "Beard trim", "Line-up"] },
-  { id: 4, name: "Lerato Salon", lat: -25.7455, lng: 28.2255, service: "Salon & Hair", rating: 4.8, dist: "300 m", sells: ["Braids", "Weave", "Nails", "Wash & blow"] },
-  { id: 5, name: "Kagiso Car Wash", lat: -25.7500, lng: 28.2280, service: "Car Wash", rating: 4.3, dist: "540 m", sells: ["Full wash", "Wax", "Interior valet"] },
-];
+  if (!error && data) {
+    const totalSpent = data.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+    balEl.textContent = `R ${totalSpent.toFixed(2)}`;
+  }
+}
 
-const SPEND_WEEK = [
-  { day: "Mon", total: 65 }, { day: "Tue", total: 45 }, { day: "Wed", total: 120 },
-  { day: "Thu", total: 30 }, { day: "Fri", total: 210 }, { day: "Sat", total: 175 },
-  { day: "Sun", total: 40 },
-];
-const CATEGORIES = [
-  { name: "Food", pct: 40, amount: 320 },
-  { name: "Spaza", pct: 28, amount: 224 },
-  { name: "Grooming", pct: 20, amount: 160 },
-  { name: "Services", pct: 12, amount: 96 },
-];
-const FAV_SELLERS = [
-  { name: "Thabo's Spaza", visits: 12 },
-  { name: "Mama Nomsa Kota", visits: 8 },
-  { name: "Lerato Salon", visits: 3 },
-];
-
-let CHAT = {};
-
-// ============ Nav ============
-document.querySelectorAll(".nav-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    render(btn.dataset.tab);
+// ============ Synchronized Navigation (Desktop Sidebar & Mobile Nav) ============
+function setupNavigation() {
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.tab;
+      document.querySelectorAll(".nav-btn").forEach((b) => {
+        b.classList.toggle("active", b.dataset.tab === tab);
+      });
+      render(tab);
+    });
   });
-});
+}
 
 function render(tab) {
   if (tab === "wallet") renderWallet();
@@ -87,9 +101,9 @@ function renderWallet() {
       <div class="header-row">
         <div>
           <h1 class="h1">Wallet</h1>
-          <p style="font-size:12px; color:#868b92; margin:0;">Hi, ${buyerName}</p>
+          <p style="font-size:13px; color:var(--muted); margin:0;">Hi, ${buyerName}</p>
         </div>
-        <button class="plus-btn" id="addCardBtn">
+        <button class="plus-btn" id="addCardBtn" title="Add Card">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
@@ -109,6 +123,15 @@ function renderWallet() {
 function renderCards() {
   const host = document.getElementById("cardStack");
   if (!host) return;
+  if (cards.length === 0) {
+    host.innerHTML = `
+      <div class="credit-card" style="background: linear-gradient(135deg, #10a37f, #0d8a6c);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <div class="cc-num">•••• •••• •••• 4417</div>
+        <div class="cc-brand">Patela Card</div>
+      </div>`;
+    return;
+  }
   host.innerHTML = cards.map((c) => `
     <div class="credit-card">
       <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
@@ -124,11 +147,11 @@ async function loadCards() {
     .eq("user_id", currentUser.id)
     .order("created_at", { ascending: true });
   if (error) { console.error(error); return; }
-  cards = data || [];
-  renderCards();
+  if (data && data.length > 0) {
+    cards = data;
+    renderCards();
+  }
 }
-
-let qrScanner = null;
 
 function playPaymentSound() {
   try {
@@ -174,22 +197,22 @@ function renderScan() {
 
 function startScanner() {
   if (typeof Html5Qrcode === "undefined") {
-    document.getElementById("scanStatus").textContent = "Scanner not loaded. Refresh the page.";
+    document.getElementById("scanStatus").textContent = "Scanner library not loaded. Refresh the page.";
     return;
   }
   qrScanner = new Html5Qrcode("reader");
   qrScanner
     .start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 200, height: 200 } },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
       (decodedText) => {
         stopScanner();
         handleScannedCode(decodedText.trim());
       },
-      () => { /* frame scan listener */ }
+      () => { /* frame scan cycle */ }
     )
     .catch((err) => {
-      document.getElementById("scanStatus").textContent = "Cannot open camera. Allow camera access.";
+      document.getElementById("scanStatus").textContent = "Cannot open camera. Please allow camera permissions.";
       console.error(err);
     });
 }
@@ -203,12 +226,11 @@ function stopScanner() {
 
 async function handleScannedCode(code) {
   const status = document.getElementById("scanStatus");
-  if (status) status.textContent = "Reading payment…";
+  if (status) status.textContent = "Reading payment details…";
 
-  // Validate transaction UUID format
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(code)) {
-    alert("That QR code isn't a valid Patela payment transaction.");
+    alert("That QR code isn't a valid Patela transaction.");
     renderWallet();
     return;
   }
@@ -238,11 +260,11 @@ async function handleScannedCode(code) {
 function renderConfirm(tx) {
   screen.innerHTML = `
     <div class="success-wrap">
-      <div class="success-to" style="margin-bottom:6px">Paying</div>
-      <div class="seller-name" style="font-size:22px;font-weight:800">${tx.seller_name || "Seller"}</div>
+      <div class="success-to" style="margin-bottom:6px">Paying to</div>
+      <div class="seller-name" style="font-size:24px;font-weight:800">${tx.seller_name || "Merchant"}</div>
       <div class="success-amount" style="margin-top:18px">R ${parseFloat(tx.amount).toFixed(2)}</div>
-      <div style="display:flex;gap:12px;margin-top:30px;width:100%;max-width:300px">
-        <button class="btn-directions" id="cancelPay" style="flex:1;padding:14px;border-radius:12px;border:1px solid #ededf0;background:#f6f6f7;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>
+      <div style="display:flex;gap:12px;margin-top:30px;width:100%;max-width:320px">
+        <button class="btn-directions" id="cancelPay" style="flex:1;padding:14px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-weight:700;cursor:pointer;font-family:inherit">Cancel</button>
         <button class="scan-btn" id="confirmPay" style="flex:1">Confirm</button>
       </div>
     </div>`;
@@ -258,7 +280,6 @@ async function payNow(tx) {
 
   const buyerName = currentUser?.user_metadata?.name || "Buyer";
 
-  // Atomically mark the transaction as paid with buyer credentials
   const { error } = await supabase
     .from("transactions")
     .update({ status: "paid", buyer_name: buyerName, buyer_id: currentUser.id })
@@ -271,6 +292,7 @@ async function payNow(tx) {
     return;
   }
 
+  updateSidebarBalance();
   renderApproved(tx);
 }
 
@@ -281,7 +303,7 @@ function renderApproved(tx) {
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="40" height="40"><path d="M20 6 9 17l-5-5"/></svg>
       </div>
       <div class="success-amount">R ${parseFloat(tx.amount).toFixed(2)}</div>
-      <div class="success-to">Payment approved · ${tx.seller_name || "Seller"}</div>
+      <div class="success-to">Payment approved · ${tx.seller_name || "Merchant"}</div>
       <button class="scan-btn" id="doneBtn" style="max-width:260px">Done</button>
     </div>`;
   document.getElementById("doneBtn").addEventListener("click", renderWallet);
@@ -366,7 +388,7 @@ async function renderActivity() {
   screen.innerHTML = `
     <div class="pad">
       <h1 class="h1">Activity</h1>
-      <div id="activityBody"><p style="color:#868b92">Loading…</p></div>
+      <div id="activityBody"><p style="color:var(--muted)">Loading…</p></div>
     </div>`;
 
   const { data: purchases, error } = await supabase
@@ -379,7 +401,7 @@ async function renderActivity() {
   const body = document.getElementById("activityBody");
 
   if (error) {
-    body.innerHTML = `<p style="color:#868b92">Couldn't load activity.</p>`;
+    body.innerHTML = `<p style="color:var(--muted)">Couldn't load activity.</p>`;
     console.error(error);
     return;
   }
@@ -393,11 +415,11 @@ async function renderActivity() {
         <div class="summary-label">Spent recently</div>
         <div class="summary-value">R ${total.toFixed(2)}</div>
       </div>
-      <div class="summary-count">${list.length} purchases</div>
+      <div class="summary-count">${list.length} purchase${list.length === 1 ? "" : "s"}</div>
     </div>
     <div class="tx-list">
-      ${list.length === 0 ? `<p style="color:#868b92">No purchases yet.</p>` : list.map((p) => {
-        const seller = p.seller_name || "Seller";
+      ${list.length === 0 ? `<p style="color:var(--muted); padding: 24px; text-align: center;">No purchases yet.</p>` : list.map((p) => {
+        const seller = p.seller_name || "Merchant";
         const time = new Date(p.created_at).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
         return `
           <div class="tx">
@@ -412,825 +434,202 @@ async function renderActivity() {
     </div>`;
 }
 
-
-
 // ============ 3. ANALYTICS ============
-
 async function renderAnalytics() {
-
   screen.innerHTML = `
     <div class="pad">
-
-      <h1 class="h1">
-        Analytics
-      </h1>
-
-      <p style="
-        margin-top:-8px;
-        margin-bottom:20px;
-        color:#868b92;
-        font-size:12px;
-      ">
+      <h1 class="h1">Analytics</h1>
+      <p style="margin-top:-6px; margin-bottom:20px; color:var(--muted); font-size:13px;">
         See how and where you're spending
       </p>
-
-      <div
-        id="analyticsBody"
-      >
-        <p style="
-          color:#868b92;
-          text-align:center;
-          padding:30px 0;
-        ">
-          Loading your spending...
-        </p>
+      <div id="analyticsBody">
+        <p style="color:var(--muted); text-align:center; padding:30px 0;">Loading your spending...</p>
       </div>
+    </div>`;
 
-    </div>
-  `;
+  const body = document.getElementById("analyticsBody");
 
-
-  const body =
-    document.getElementById(
-      "analyticsBody"
-    );
-
-
-  // ===========================================
-  // GET ALL PAID TRANSACTIONS FOR THIS BUYER
-  // ===========================================
-
-  const {
-    data: transactions,
-    error
-  } = await supabase
+  const { data: transactions, error } = await supabase
     .from("transactions")
     .select("*")
-    .eq(
-      "buyer_id",
-      currentUser.id
-    )
-    .eq(
-      "status",
-      "paid"
-    )
-    .order(
-      "created_at",
-      {
-        ascending: true
-      }
-    );
-
+    .eq("buyer_id", currentUser.id)
+    .eq("status", "paid")
+    .order("created_at", { ascending: true });
 
   if (error) {
-
-    console.error(
-      "Buyer analytics error:",
-      error
-    );
-
-
-    body.innerHTML = `
-      <p style="
-        color:#868b92;
-        text-align:center;
-        padding:30px 0;
-      ">
-        Couldn't load analytics.
-      </p>
-    `;
-
+    console.error("Buyer analytics error:", error);
+    body.innerHTML = `<p style="color:var(--muted); text-align:center; padding:30px 0;">Couldn't load analytics.</p>`;
     return;
   }
 
+  const purchases = transactions || [];
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const purchases =
-    transactions || [];
+  const thisMonth = purchases.filter((t) => new Date(t.created_at) >= monthStart);
+  const monthSpent = thisMonth.reduce((total, t) => total + Number(t.amount), 0);
+  const averagePurchase = thisMonth.length > 0 ? monthSpent / thisMonth.length : 0;
 
+  // Week calculation (Mon -> Sun)
+  const weekStart = new Date(now);
+  const currentDay = weekStart.getDay();
+  const distanceFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+  weekStart.setDate(weekStart.getDate() - distanceFromMonday);
+  weekStart.setHours(0, 0, 0, 0);
 
-  // ===========================================
-  // CURRENT DATE
-  // ===========================================
+  const nextWeek = new Date(weekStart);
+  nextWeek.setDate(nextWeek.getDate() + 7);
 
-  const now =
-    new Date();
-
-
-  // ===========================================
-  // START OF THIS MONTH
-  // ===========================================
-
-  const monthStart =
-    new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1
-    );
-
-
-  const thisMonth =
-    purchases.filter(
-      (transaction) =>
-        new Date(
-          transaction.created_at
-        ) >= monthStart
-    );
-
-
-  const monthSpent =
-    thisMonth.reduce(
-      (total, transaction) =>
-        total +
-        Number(
-          transaction.amount
-        ),
-      0
-    );
-
-
-  // ===========================================
-  // AVERAGE PURCHASE
-  // ===========================================
-
-  const averagePurchase =
-    thisMonth.length > 0
-
-      ? monthSpent /
-        thisMonth.length
-
-      : 0;
-
-
-  // ===========================================
-  // CURRENT WEEK
-  // Monday -> Sunday
-  // ===========================================
-
-  const weekStart =
-    new Date(now);
-
-
-  const currentDay =
-    weekStart.getDay();
-
-
-  const distanceFromMonday =
-    currentDay === 0
-      ? 6
-      : currentDay - 1;
-
-
-  weekStart.setDate(
-    weekStart.getDate() -
-    distanceFromMonday
-  );
-
-
-  weekStart.setHours(
-    0,
-    0,
-    0,
-    0
-  );
-
-
-  const nextWeek =
-    new Date(
-      weekStart
-    );
-
-
-  nextWeek.setDate(
-    nextWeek.getDate() + 7
-  );
-
-
-  const weekPurchases =
-    purchases.filter(
-      (transaction) => {
-
-        const date =
-          new Date(
-            transaction.created_at
-          );
-
-
-        return (
-          date >= weekStart &&
-          date < nextWeek
-        );
-
-      }
-    );
-
-
-  // ===========================================
-  // SPENDING PER DAY THIS WEEK
-  // ===========================================
+  const weekPurchases = purchases.filter((t) => {
+    const d = new Date(t.created_at);
+    return d >= weekStart && d < nextWeek;
+  });
 
   const weekDays = [
-
-    {
-      day: "Mon",
-      jsDay: 1,
-      total: 0
-    },
-
-    {
-      day: "Tue",
-      jsDay: 2,
-      total: 0
-    },
-
-    {
-      day: "Wed",
-      jsDay: 3,
-      total: 0
-    },
-
-    {
-      day: "Thu",
-      jsDay: 4,
-      total: 0
-    },
-
-    {
-      day: "Fri",
-      jsDay: 5,
-      total: 0
-    },
-
-    {
-      day: "Sat",
-      jsDay: 6,
-      total: 0
-    },
-
-    {
-      day: "Sun",
-      jsDay: 0,
-      total: 0
-    }
-
+    { day: "Mon", jsDay: 1, total: 0 },
+    { day: "Tue", jsDay: 2, total: 0 },
+    { day: "Wed", jsDay: 3, total: 0 },
+    { day: "Thu", jsDay: 4, total: 0 },
+    { day: "Fri", jsDay: 5, total: 0 },
+    { day: "Sat", jsDay: 6, total: 0 },
+    { day: "Sun", jsDay: 0, total: 0 },
   ];
 
+  weekPurchases.forEach((t) => {
+    const day = new Date(t.created_at).getDay();
+    const match = weekDays.find((item) => item.jsDay === day);
+    if (match) match.total += Number(t.amount);
+  });
 
-  weekPurchases.forEach(
-    (transaction) => {
-
-      const day =
-        new Date(
-          transaction.created_at
-        ).getDay();
-
-
-      const match =
-        weekDays.find(
-          (item) =>
-            item.jsDay === day
-        );
-
-
-      if (match) {
-
-        match.total +=
-          Number(
-            transaction.amount
-          );
-
-      }
-
-    }
+  const busiestDay = weekDays.reduce((highest, current) =>
+    current.total > highest.total ? current : highest
   );
 
-
-  // ===========================================
-  // BUSIEST SPENDING DAY
-  // ===========================================
-
-  const busiestDay =
-    weekDays.reduce(
-      (highest, current) =>
-
-        current.total >
-        highest.total
-
-          ? current
-          : highest
-
-    );
-
-
-  // ===========================================
-  // SELLER SPENDING
-  // ===========================================
-
+  // Group by Sellers
   const sellerMap = {};
+  thisMonth.forEach((t) => {
+    const sellerName = t.seller_name || "Seller";
+    const sellerKey = t.seller_id || sellerName;
 
-
-  thisMonth.forEach(
-    (transaction) => {
-
-      const sellerName =
-        transaction.seller_name ||
-        "Seller";
-
-
-      const sellerKey =
-        transaction.seller_id ||
-        sellerName;
-
-
-      if (
-        !sellerMap[sellerKey]
-      ) {
-
-        sellerMap[sellerKey] = {
-
-          name:
-            sellerName,
-
-          amount:
-            0,
-
-          visits:
-            0
-
-        };
-
-      }
-
-
-      sellerMap[
-        sellerKey
-      ].amount +=
-        Number(
-          transaction.amount
-        );
-
-
-      sellerMap[
-        sellerKey
-      ].visits +=
-        1;
-
+    if (!sellerMap[sellerKey]) {
+      sellerMap[sellerKey] = { name: sellerName, amount: 0, visits: 0 };
     }
-  );
+    sellerMap[sellerKey].amount += Number(t.amount);
+    sellerMap[sellerKey].visits += 1;
+  });
 
-
-  const sellers =
-    Object
-      .values(
-        sellerMap
-      )
-      .sort(
-        (a, b) =>
-          b.amount -
-          a.amount
-      );
-
-
-  // ===========================================
-  // FAVOURITE SELLERS
-  // ===========================================
-
-  const favouriteSellers =
-    [...sellers]
-      .sort(
-        (a, b) => {
-
-          if (
-            b.visits !==
-            a.visits
-          ) {
-
-            return (
-              b.visits -
-              a.visits
-            );
-
-          }
-
-
-          return (
-            b.amount -
-            a.amount
-          );
-
-        }
-      )
-      .slice(
-        0,
-        5
-      );
-
-
-  // ===========================================
-  // RENDER ANALYTICS
-  // ===========================================
+  const sellers = Object.values(sellerMap).sort((a, b) => b.amount - a.amount);
+  const favouriteSellers = [...sellers].sort((a, b) => (b.visits !== a.visits ? b.visits - a.visits : b.amount - a.amount)).slice(0, 5);
 
   body.innerHTML = `
-
     <!-- SUMMARY -->
-
-    <div
-      class="summary-card"
-      style="
-        margin-bottom:16px;
-      "
-    >
-
+    <div class="summary-card" style="margin-bottom:16px;">
       <div>
-
-        <div class="summary-label">
-          Spent this month
-        </div>
-
-        <div class="summary-value">
-          R ${monthSpent.toFixed(2)}
-        </div>
-
+        <div class="summary-label">Spent this month</div>
+        <div class="summary-value">R ${monthSpent.toFixed(2)}</div>
       </div>
-
-
       <div class="summary-count">
-        ${thisMonth.length}
-        purchase${thisMonth.length === 1 ? "" : "s"}
+        ${thisMonth.length} purchase${thisMonth.length === 1 ? "" : "s"}
       </div>
-
     </div>
-
 
     <!-- STATISTICS -->
-
     <div class="stat-row">
-
-
       <div class="stat">
-
-        <div class="stat-label">
-          Average purchase
-        </div>
-
-        <div class="stat-value">
-          R${averagePurchase.toFixed(2)}
-        </div>
-
-        <div class="stat-sub">
-          this month
-        </div>
-
+        <div class="stat-label">Average purchase</div>
+        <div class="stat-value">R${averagePurchase.toFixed(2)}</div>
+        <div class="stat-sub">this month</div>
       </div>
-
-
       <div class="stat">
-
-        <div class="stat-label">
-          Busiest day
-        </div>
-
-        <div class="stat-value">
-
-          ${
-            busiestDay.total > 0
-              ? busiestDay.day
-              : "--"
-          }
-
-        </div>
-
-        <div class="stat-sub">
-
-          ${
-            busiestDay.total > 0
-              ? `R${busiestDay.total.toFixed(2)}`
-              : "No spending"
-          }
-
-        </div>
-
+        <div class="stat-label">Busiest day</div>
+        <div class="stat-value">${busiestDay.total > 0 ? busiestDay.day : "--"}</div>
+        <div class="stat-sub">${busiestDay.total > 0 ? `R${busiestDay.total.toFixed(2)}` : "No spending"}</div>
       </div>
-
-
     </div>
-
 
     <!-- WEEK CHART -->
-
     <div class="chart-card">
-
-      <div class="chart-title">
-        Spending this week
-      </div>
-
-      <canvas
-        id="spendChart"
-      ></canvas>
-
+      <div class="chart-title">Spending this week</div>
+      <canvas id="spendChart"></canvas>
     </div>
-
 
     <!-- WHERE MONEY GOES -->
-
     <div class="chart-card">
-
-      <div class="chart-title">
-        Where your money goes
-      </div>
-
-
+      <div class="chart-title">Where your money goes</div>
       ${
         sellers.length === 0
-
-          ? `
-
-            <p style="
-              color:#868b92;
-              font-size:13px;
-              padding:14px 0;
-            ">
-              No purchases this month.
-            </p>
-
-          `
-
-          : sellers
-              .slice(
-                0,
-                5
-              )
-              .map(
-                (seller) => {
-
-                  const percentage =
-                    monthSpent > 0
-
-                      ? (
-                          seller.amount /
-                          monthSpent
-                        ) * 100
-
-                      : 0;
-
-
-                  return `
-
-                    <div class="cat-row">
-
-                      <span
-                        class="cat-name"
-                        title="${seller.name}"
-                      >
-                        ${seller.name}
-                      </span>
-
-
-                      <span class="cat-track">
-
-                        <span
-                          class="cat-fill"
-                          style="
-                            width:${percentage}%;
-                          "
-                        ></span>
-
-                      </span>
-
-
-                      <span class="cat-val">
-                        R${seller.amount.toFixed(2)}
-                      </span>
-
-                    </div>
-
-                  `;
-
-                }
-              )
-              .join("")
+          ? `<p style="color:var(--muted); font-size:13px; padding:10px 0;">No purchases recorded this month.</p>`
+          : sellers.slice(0, 5).map((seller) => {
+              const percentage = monthSpent > 0 ? (seller.amount / monthSpent) * 100 : 0;
+              return `
+                <div class="cat-row">
+                  <span class="cat-name" title="${seller.name}">${seller.name}</span>
+                  <span class="cat-track"><span class="cat-fill" style="width:${percentage}%;"></span></span>
+                  <span class="cat-val">R${seller.amount.toFixed(2)}</span>
+                </div>`;
+            }).join("")
       }
-
     </div>
-
 
     <!-- FAVOURITE SELLERS -->
-
     <div class="chart-card">
-
-      <div class="chart-title">
-        Favourite sellers
-      </div>
-
-
+      <div class="chart-title">Favourite sellers</div>
       <div class="top-list">
-
         ${
           favouriteSellers.length === 0
-
-            ? `
-
-              <p style="
-                color:#868b92;
-                font-size:13px;
-                padding:14px 0;
-              ">
-                No favourite sellers yet.
-              </p>
-
-            `
-
-            : favouriteSellers
-                .map(
-                  (seller, index) => `
-
-                    <div class="top-row">
-
-                      <span class="top-rank">
-                        ${index + 1}
-                      </span>
-
-
-                      <div
-                        style="
-                          flex:1;
-                        "
-                      >
-
-                        <div>
-                          ${seller.name}
-                        </div>
-
-                        <div
-                          style="
-                            color:#868b92;
-                            font-size:11px;
-                            margin-top:2px;
-                          "
-                        >
-                          R${seller.amount.toFixed(2)}
-                          spent
-                        </div>
-
-                      </div>
-
-
-                      <span class="top-spend">
-
-                        ${seller.visits}
-                        visit${seller.visits === 1 ? "" : "s"}
-
-                      </span>
-
+            ? `<p style="color:var(--muted); font-size:13px; padding:10px 0;">No favourite sellers yet.</p>`
+            : favouriteSellers.map((seller, index) => `
+                <div class="top-row">
+                  <span class="top-rank">${index + 1}</span>
+                  <div style="flex:1">
+                    <div>${seller.name}</div>
+                    <div style="color:var(--muted); font-size:11px; margin-top:2px;">
+                      R${seller.amount.toFixed(2)} spent
                     </div>
-
-                  `
-                )
-                .join("")
+                  </div>
+                  <span class="top-spend">${seller.visits} visit${seller.visits === 1 ? "" : "s"}</span>
+                </div>`).join("")
         }
-
       </div>
+    </div>`;
 
-    </div>
-
-  `;
-
-
-  // ===========================================
-  // REAL SUPABASE WEEKLY CHART
-  // ===========================================
-
-  new Chart(
-    document.getElementById(
-      "spendChart"
-    ),
-    {
-
-      type:
-        "line",
-
-      data: {
-
-        labels:
-          weekDays.map(
-            (item) =>
-              item.day
-          ),
-
-        datasets: [
-
-          {
-
-            data:
-              weekDays.map(
-                (item) =>
-                  item.total
-              ),
-
-            borderColor:
-              GREEN,
-
-            backgroundColor:
-              "rgba(15,124,95,0.1)",
-
-            borderWidth:
-              2.5,
-
-            pointRadius:
-              3,
-
-            tension:
-              0.35,
-
-            fill:
-              true
-
-          }
-
-        ]
-
-      },
-
-
-      options: {
-
-        responsive:
-          true,
-
-        maintainAspectRatio:
-          false,
-
-
-        plugins: {
-
-          legend: {
-            display:
-              false
-          }
-
+  new Chart(document.getElementById("spendChart"), {
+    type: "line",
+    data: {
+      labels: weekDays.map((item) => item.day),
+      datasets: [
+        {
+          data: weekDays.map((item) => item.total),
+          borderColor: GREEN,
+          backgroundColor: "rgba(16,163,127,0.1)",
+          borderWidth: 2.5,
+          pointRadius: 3,
+          tension: 0.35,
+          fill: true,
         },
-
-
-        scales: {
-
-          x: {
-
-            grid: {
-              display:
-                false
-            },
-
-            ticks: {
-
-              color:
-                "#6b7280",
-
-              font: {
-                size:
-                  11
-              }
-
-            }
-
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: "#6b7280", font: { size: 11 } },
+        },
+        y: {
+          grid: { color: "#eef0f2" },
+          ticks: {
+            color: "#6b7280",
+            font: { size: 11 },
+            callback: (v) => `R${v}`,
           },
-
-
-          y: {
-
-            grid: {
-              color:
-                "#eef0f2"
-            },
-
-            ticks: {
-
-              color:
-                "#6b7280",
-
-              font: {
-                size:
-                  11
-              },
-
-              callback:
-                function(value) {
-
-                  return `R${value}`;
-
-                }
-
-            },
-
-            beginAtZero:
-              true
-
-          }
-
-        }
-
-      }
-
-    }
-  );
+          beginAtZero: true,
+        },
+      },
+    },
+  });
 }
 
 // ============ 4. SELLERS MAP ============
@@ -1249,27 +648,39 @@ function renderMap() {
 function initGoogleMap() {
   const el = document.getElementById("map");
   if (!(window.google && window.google.maps)) {
-    el.parentElement.insertAdjacentHTML("beforeend",
-      `<div class="map-error">Map couldn't load. Check that the Maps JavaScript API is enabled, billing is on, and this domain is allowed for your API key.</div>`);
+    el.parentElement.insertAdjacentHTML(
+      "beforeend",
+      `<div class="map-error" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:#111;">
+        Map couldn't load. Check that Google Maps API is loaded.
+      </div>`
+    );
     return;
   }
+
   const map = new google.maps.Map(el, {
-    center: BUYER_LOC, zoom: 16, mapTypeId: "satellite",
-    disableDefaultUI: true, gestureHandling: "greedy",
+    center: BUYER_LOC,
+    zoom: 16,
+    mapTypeId: "satellite",
+    disableDefaultUI: true,
+    gestureHandling: "greedy",
   });
 
   new google.maps.Marker({
-    position: BUYER_LOC, map, title: "You",
+    position: BUYER_LOC,
+    map,
+    title: "You",
     icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#2563eb", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 3 },
   });
 
   const stallIcon = {
-    url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
+    url:
+      "data:image/svg+xml;charset=UTF-8," +
+      encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="44" height="54" viewBox="0 0 44 54">
         <defs><filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.35)"/>
         </filter></defs>
-        <path filter="url(#sh)" d="M22 2C12 2 4 9.6 4 19c0 11.5 14 26 17 29a1.4 1.4 0 0 0 2 0c3-3 17-17.5 17-29C40 9.6 32 2 22 2z" fill="#0f7c5f" stroke="#ffffff" stroke-width="2.5"/>
+        <path filter="url(#sh)" d="M22 2C12 2 4 9.6 4 19c0 11.5 14 26 17 29a1.4 1.4 0 0 0 2 0c3-3 17-17.5 17-29C40 9.6 32 2 22 2z" fill="#10a37f" stroke="#ffffff" stroke-width="2.5"/>
         <g transform="translate(11,10)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
           <path d="M1 6 L3 1 H19 L21 6 Z"/>
           <path d="M2 6 v10 h18 V6"/>
@@ -1282,7 +693,10 @@ function initGoogleMap() {
 
   SELLERS.forEach((s) => {
     const marker = new google.maps.Marker({
-      position: { lat: s.lat, lng: s.lng }, map, title: s.name, icon: stallIcon,
+      position: { lat: s.lat, lng: s.lng },
+      map,
+      title: s.name,
+      icon: stallIcon,
     });
     marker.addListener("click", () => showSellerCard(s));
   });
