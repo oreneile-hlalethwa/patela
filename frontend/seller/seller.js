@@ -1,8 +1,10 @@
 import { supabase } from "../shared/supabaseClient.js";
 
-// ============ Auth Guard ============
+// ============ Auth Guard & Global State ============
 let currentUser = null;
 let ACCOUNT_CODE = "PTL-4827-9931";
+let cards = [];
+let paymentChannel = null;
 
 async function checkSession() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -11,7 +13,6 @@ async function checkSession() {
     return;
   }
 
-  // Strict enforcement: Ensure logged-in user is a seller
   const role = session.user.user_metadata?.role;
   if (role !== "seller") {
     alert("Access restricted: You must log in with a Seller account.");
@@ -28,11 +29,29 @@ async function checkSession() {
 }
 
 async function handleSignOut() {
+  cleanupPayment();
   await supabase.auth.signOut();
   window.location.href = "../login/login.html";
 }
 
-// ============ Config & mock data ============
+// ============ Audio Soundbox (Web Speech API) ============
+function speakPaymentReceived(buyerName, amount) {
+  if (!("speechSynthesis" in window)) return;
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance();
+  utterance.text = `Payment received. ${amount} Rand from ${buyerName || "Customer"}`;
+  utterance.rate = 0.95;
+  utterance.pitch = 1.0;
+
+  const voices = window.speechSynthesis.getVoices();
+  const voice = voices.find((v) => v.lang === "en-ZA" || v.lang === "en-GB") || voices[0];
+  if (voice) utterance.voice = voice;
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// ============ Config & Mock Data ============
 const SELLER_LOC = { lat: -25.7479, lng: 28.2293 };
 const CUSTOMER_POINTS = [
   { lat: -25.7460, lng: 28.2270, weight: 5 },
@@ -42,18 +61,6 @@ const CUSTOMER_POINTS = [
   { lat: -25.7500, lng: 28.2280, weight: 2 },
   { lat: -25.7485, lng: 28.2260, weight: 4 },
   { lat: -25.7465, lng: 28.2300, weight: 3 },
-];
-
-let cards = [];
-
-const TODAY_PAYMENTS = [
-  { id: 1, name: "Thabo M.", amount: 45, time: "14:22" },
-  { id: 2, name: "Nomsa K.", amount: 120, time: "13:05" },
-  { id: 3, name: "Sipho D.", amount: 30, time: "12:47" },
-  { id: 4, name: "Lerato P.", amount: 85, time: "11:30" },
-  { id: 5, name: "Kagiso T.", amount: 15, time: "10:12" },
-  { id: 6, name: "Ayanda Z.", amount: 200, time: "09:05" },
-  { id: 7, name: "Bongani S.", amount: 60, time: "08:40" },
 ];
 
 const HOURLY = [
@@ -164,10 +171,7 @@ async function loadCards() {
   renderCards();
 }
 
-let paymentChannel = null;
-
 async function renderReceive() {
-  // Seller's display name: business name if present, else personal name
   const sellerName =
     currentUser?.user_metadata?.business_name ||
     currentUser?.user_metadata?.name ||
@@ -190,41 +194,47 @@ async function renderReceive() {
     renderWallet();
   });
 
-  // 1. Create a pending transaction in Supabase
-  const { data: tx, error } = await supabase
-    .from("transactions")
-    .insert({
-      seller_id: currentUser.id,
-      seller_code: ACCOUNT_CODE,
-      seller_name: sellerName,
-      amount: parseFloat(amount),
-      status: "pending",
-    })
-    .select()
-    .single();
+  try {
+    // 1. Create a pending transaction record with a UUID in Supabase
+    const { data: tx, error } = await supabase
+      .from("transactions")
+      .insert({
+        seller_id: currentUser.id,
+        seller_code: ACCOUNT_CODE,
+        seller_name: sellerName,
+        amount: parseFloat(amount),
+        status: "pending",
+      })
+      .select()
+      .single();
 
-  if (error || !tx) {
-    document.getElementById("waitBox").innerHTML = "Could not start payment. Try again.";
-    console.error(error);
-    return;
-  }
+    if (error || !tx) {
+      console.error("Transaction creation failed:", error);
+      document.getElementById("waitBox").innerHTML = `<span style="color:#e5484d;">Error: ${error?.message || "Failed to create transaction"}</span>`;
+      return;
+    }
 
-  // 2. QR now encodes the transaction id (buyer scans this)
-  makeQR("qrBig", String(tx.id), 260);
+    // 2. Encode the transaction UUID in the QR code
+    makeQR("qrBig", String(tx.id), 260);
 
-  // 3. Listen live — when buyer marks it paid, show the tick
-  paymentChannel = supabase
-    .channel("tx-" + tx.id)
-    .on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "transactions", filter: `id=eq.${tx.id}` },
-      (payload) => {
-        if (payload.new.status === "paid") {
-          showSellerPaid(payload.new);
+    // 3. Listen live via Supabase Realtime for the buyer confirmation
+    paymentChannel = supabase
+      .channel("tx-" + tx.id)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "transactions", filter: `id=eq.${tx.id}` },
+        (payload) => {
+          if (payload.new.status === "paid") {
+            speakPaymentReceived(payload.new.buyer_name, payload.new.amount);
+            showSellerPaid(payload.new);
+          }
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
+  } catch (err) {
+    console.error("renderReceive execution error:", err);
+    document.getElementById("waitBox").innerHTML = `<span style="color:#e5484d;">Could not generate payment QR.</span>`;
+  }
 }
 
 function showSellerPaid(tx) {
@@ -235,7 +245,7 @@ function showSellerPaid(tx) {
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="40" height="40"><path d="M20 6 9 17l-5-5"/></svg>
       </div>
       <div class="success-amount">+R ${parseFloat(tx.amount).toFixed(2)}</div>
-      <div class="success-to">Paid by ${tx.buyer_name || "buyer"}</div>
+      <div class="success-to">Paid by ${tx.buyer_name || "Customer"}</div>
       <button class="scan-btn" id="doneBtn" style="max-width:260px">Done</button>
     </div>`;
   document.getElementById("doneBtn").addEventListener("click", () => {
@@ -287,7 +297,6 @@ function openAddCard() {
     saveBtn.disabled = digits.length < 4;
   });
 
-  // expiry: type 2 digits in MM, auto-jump to YY
   mmEl.addEventListener("input", () => {
     mmEl.value = mmEl.value.replace(/\D/g, "").slice(0, 2);
     if (mmEl.value.length === 2) yyEl.focus();
@@ -295,7 +304,6 @@ function openAddCard() {
   yyEl.addEventListener("input", () => {
     yyEl.value = yyEl.value.replace(/\D/g, "").slice(0, 2);
   });
-  // backspace on empty YY jumps back to MM
   yyEl.addEventListener("keydown", (e) => {
     if (e.key === "Backspace" && yyEl.value === "") mmEl.focus();
   });
@@ -337,7 +345,6 @@ async function renderActivity() {
       <div id="activityBody"><p style="color:#868b92">Loading…</p></div>
     </div>`;
 
-  // fetch all this seller's transactions (paid in, and withdrawals out)
   const { data: rows, error } = await supabase
     .from("transactions")
     .select("*")
@@ -357,13 +364,11 @@ async function renderActivity() {
   const payments = all.filter((r) => r.status === "paid");
   const withdrawals = all.filter((r) => r.status === "withdrawal");
 
-  // received today only
   const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
   const receivedToday = payments
     .filter((p) => new Date(p.created_at) >= startOfDay)
     .reduce((a, p) => a + Number(p.amount), 0);
 
-  // current balance = all received - all withdrawn
   const totalIn = payments.reduce((a, p) => a + Number(p.amount), 0);
   const totalOut = withdrawals.reduce((a, w) => a + Number(w.amount), 0);
   const balance = totalIn - totalOut;
@@ -449,7 +454,6 @@ function openWithdraw(balance) {
     confirmBtn.disabled = true;
     confirmBtn.textContent = "Processing…";
 
-    // save the withdrawal to the database
     const { error } = await supabase.from("transactions").insert({
       seller_id: currentUser.id,
       seller_code: ACCOUNT_CODE,
@@ -468,7 +472,7 @@ function openWithdraw(balance) {
 
     div.remove();
     showAbsaSms(amt);
-    renderActivity(); // refresh so balance drops
+    renderActivity();
   });
 
   div.querySelector("#wClose").addEventListener("click", () => div.remove());
@@ -666,6 +670,7 @@ function openChat() {
 // ============ QR helper ============
 function makeQR(hostId, value, size) {
   const host = document.getElementById(hostId);
+  if (!host) return;
   host.innerHTML = "";
   new QRCode(host, { text: value, width: size, height: size, colorDark: "#0a0a0a", colorLight: "#ffffff" });
 }
